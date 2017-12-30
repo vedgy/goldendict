@@ -75,7 +75,7 @@ inline bool hasQueryItem( QUrl const & url, QString const & key )
 inline QString queryItemValue( QUrl const & url, QString const & item )
 {
 #if IS_QT_5
-  return QUrlQuery( url ).queryItemValue( item );
+  return QUrlQuery( url ).queryItemValue( item, QUrl::FullyDecoded );
 #else
   return url.queryItemValue( item );
 #endif
@@ -129,6 +129,24 @@ inline QString path( QUrl const & url )
   return url.path( QUrl::FullyDecoded );
 #else
   return url.path();
+#endif
+}
+
+inline void setFragment( QUrl & url, const QString & fragment )
+{
+#if IS_QT_5
+  url.setFragment( fragment, QUrl::DecodedMode );
+#else
+  url.setFragment( fragment );
+#endif
+}
+
+inline QString fragment( const QUrl & url )
+{
+#if IS_QT_5
+  return url.fragment( QUrl::FullyDecoded );
+#else
+  return url.fragment();
 #endif
 }
 

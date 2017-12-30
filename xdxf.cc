@@ -178,7 +178,8 @@ public:
   virtual sptr< Dictionary::DataRequest > getSearchResults( QString const & searchString,
                                                             int searchMode, bool matchCase,
                                                             int distanceBetweenWords,
-                                                            int maxResults );
+                                                            int maxResults,
+                                                            bool ignoreWordsOrder );
   virtual void getArticleText( uint32_t articleAddress, QString & headword, QString & text );
 
   virtual void makeFTSIndex(QAtomicInt & isCancelled, bool firstIteration );
@@ -421,9 +422,10 @@ void XdxfDictionary::getArticleText( uint32_t articleAddress, QString & headword
 sptr< Dictionary::DataRequest > XdxfDictionary::getSearchResults( QString const & searchString,
                                                                   int searchMode, bool matchCase,
                                                                   int distanceBetweenWords,
-                                                                  int maxResults )
+                                                                  int maxResults,
+                                                                  bool ignoreWordsOrder )
 {
-  return new FtsHelpers::FTSResultsRequest( *this, searchString,searchMode, matchCase, distanceBetweenWords, maxResults );
+  return new FtsHelpers::FTSResultsRequest( *this, searchString,searchMode, matchCase, distanceBetweenWords, maxResults, ignoreWordsOrder );
 }
 
 /// XdxfDictionary::getArticle()
@@ -908,7 +910,7 @@ void indexArticle( GzippedFile & gzFile,
       if ( words.empty() )
       {
         // Nothing to index, this article didn't have any tags
-        qWarning( "Warning: no <k> tags found in an article at offset 0x%x, article skipped.\n",
+        gdWarning( "No <k> tags found in an article at offset 0x%x, article skipped.\n",
                   (unsigned) articleOffset );
       }
       else
@@ -1164,10 +1166,10 @@ vector< sptr< Dictionary::Class > > makeDictionaries(
 
       string zipFileName;
 
-      if ( File::tryPossibleName( baseName + ".xdxf.files.zip", zipFileName ) ||
-           File::tryPossibleName( baseName + ".xdxf.dz.files.zip", zipFileName ) ||
-           File::tryPossibleName( baseName + ".XDXF.FILES.ZIP", zipFileName ) ||
-           File::tryPossibleName( baseName + ".XDXF.DZ.FILES.ZIP", zipFileName ) )
+      if ( File::tryPossibleZipName( baseName + ".xdxf.files.zip", zipFileName ) ||
+           File::tryPossibleZipName( baseName + ".xdxf.dz.files.zip", zipFileName ) ||
+           File::tryPossibleZipName( baseName + ".XDXF.FILES.ZIP", zipFileName ) ||
+           File::tryPossibleZipName( baseName + ".XDXF.DZ.FILES.ZIP", zipFileName ) )
         dictFiles.push_back( zipFileName );
 
       string dictId = Dictionary::makeDictionaryId( dictFiles );
@@ -1462,7 +1464,7 @@ vector< sptr< Dictionary::Class > > makeDictionaries(
 
         if ( stream.hasError() )
         {
-          gdWarning( "Warning: %s had a parse error %s at line %lu, and therefore was indexed only up to the point of error.",
+          gdWarning( "%s had a parse error %s at line %lu, and therefore was indexed only up to the point of error.",
                       dictFiles[ 0 ].c_str(), stream.errorString().toUtf8().data(),
                       (unsigned long) stream.lineNumber() );
         }

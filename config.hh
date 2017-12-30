@@ -87,6 +87,7 @@ struct Group
   QString name, icon;
   QByteArray iconData;
   QKeySequence shortcut;
+  QString favoritesFolder;
   QVector< DictionaryRef > dictionaries;
   Config::MutedDictionaries mutedDictionaries; // Disabled via dictionary bar
   Config::MutedDictionaries popupMutedDictionaries; // Disabled via dictionary bar in popup
@@ -95,6 +96,7 @@ struct Group
 
   bool operator == ( Group const & other ) const
   { return id == other.id && name == other.name && icon == other.icon &&
+           favoritesFolder == other.favoritesFolder &&
            dictionaries == other.dictionaries && shortcut == other.shortcut &&
            mutedDictionaries == other.mutedDictionaries &&
            popupMutedDictionaries == other.popupMutedDictionaries &&
@@ -158,6 +160,7 @@ struct FullTextSearch
   bool useMaxDistanceBetweenWords;
   bool useMaxArticlesPerDictionary;
   bool enabled;
+  bool ignoreWordsOrder;
   quint32 maxDictionarySize;
   QByteArray dialogGeometry;
   QString disabledTypes;
@@ -169,6 +172,7 @@ struct FullTextSearch
     useMaxDistanceBetweenWords( true ),
     useMaxArticlesPerDictionary( false ),
     enabled( true ),
+    ignoreWordsOrder( false ),
     maxDictionarySize( 0 )
   {}
 };
@@ -212,6 +216,9 @@ struct Preferences
   bool scanPopupUseIAccessibleEx;
   bool scanPopupUseGDMessage;
   bool scanToMainWindow;
+#ifdef HAVE_X11
+  bool showScanFlag;
+#endif
 
   // Whether the word should be pronounced on page load, in main window/popup
   bool pronounceOnLoadMain, pronounceOnLoadPopup;
@@ -235,6 +242,9 @@ struct Preferences
   bool alwaysExpandOptionalParts;
 
   unsigned historyStoreInterval;
+  unsigned favoritesStoreInterval;
+
+  bool confirmFavoritesDeletion;
 
   bool collapseBigArticles;
   int articleSizeLimit;
@@ -243,6 +253,8 @@ struct Preferences
 #ifndef Q_WS_X11
   bool trackClipboardChanges;
 #endif
+
+  bool synonymSearchEnabled;
 
   QString addonStyle;
 
@@ -564,6 +576,7 @@ struct Class
   QString articleSavePath;   // Path to save articles
 
   bool pinPopupWindow; // Last pin status
+  bool popupWindowAlwaysOnTop; // Last status of pinned popup window
 
   QByteArray mainWindowState; // Binary state saved by QMainWindow
   QByteArray mainWindowGeometry; // Geometry saved by QMainWindow
@@ -585,6 +598,8 @@ struct Class
   /// Bigger headwords won't be indexed. For now, only in DSL.
   unsigned int maxHeadwordSize;
 
+  unsigned int maxHeadwordsToExpand;
+
   HeadwordsDialog headwordsDialog;
 
 #ifdef Q_OS_WIN
@@ -597,7 +612,8 @@ struct Class
   Class(): lastMainGroupId( 0 ), lastPopupGroupId( 0 ),
            pinPopupWindow( false ), showingDictBarNames( false ),
            usingSmallIconsInToolbars( false ),
-           maxPictureWidth( 0 ), maxHeadwordSize ( 256U )
+           maxPictureWidth( 0 ), maxHeadwordSize ( 256U ),
+           maxHeadwordsToExpand( 0 )
   {}
   Group * getGroup( unsigned id );
   Group const * getGroup( unsigned id ) const;
@@ -659,6 +675,9 @@ QString getPidFileName() throw( exError );
 
 /// Returns the filename of a history file which stores search history.
 QString getHistoryFileName() throw( exError );
+
+/// Returns the filename of a favorities file.
+QString getFavoritiesFileName() throw( exError );
 
 /// Returns the user .css file name.
 QString getUserCssFileName() throw( exError );

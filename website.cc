@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QRegExp>
+#include "gddebug.hh"
 
 namespace WebSite {
 
@@ -104,6 +105,7 @@ public:
 private:
 
   virtual void requestFinished( QNetworkReply * );
+  static QTextCodec * codecForHtml( QByteArray const & ba );
 };
 
 void WebSiteArticleRequest::cancel()
@@ -130,6 +132,50 @@ WebSiteArticleRequest::WebSiteArticleRequest( QString const & url_,
 #endif
 }
 
+QTextCodec * WebSiteArticleRequest::codecForHtml( QByteArray const & ba )
+{
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 0, 0 )
+  return QTextCodec::codecForHtml( ba, 0 );
+#else
+// Implementation taken from Qt 5 sources
+// Function from Qt 4 can't recognize charset name inside single quotes
+
+  QByteArray header = ba.left( 1024 ).toLower();
+  int pos = header.indexOf( "meta " );
+  if (pos != -1) {
+    pos = header.indexOf( "charset=", pos );
+    if (pos != -1) {
+      pos += qstrlen( "charset=" );
+
+      int pos2 = pos;
+      while ( ++pos2 < header.size() )
+      {
+        char ch = header.at( pos2 );
+        if( ch != '\"' && ch != '\'' && ch != ' ' )
+          break;
+      }
+
+      // The attribute can be closed with either """, "'", ">" or "/",
+      // none of which are valid charset characters.
+
+      while ( pos2++ < header.size() )
+      {
+        char ch = header.at( pos2 );
+        if( ch == '\"' || ch == '\'' || ch == '>' || ch == '/' )
+        {
+          QByteArray name = header.mid( pos, pos2 - pos );
+          if ( name == "unicode" )
+            name = QByteArray( "UTF-8" );
+
+          return QTextCodec::codecForName(name);
+        }
+      }
+    }
+  }
+  return 0;
+#endif
+}
+
 void WebSiteArticleRequest::requestFinished( QNetworkReply * r )
 {
   if ( isFinished() ) // Was cancelled
@@ -149,6 +195,7 @@ void WebSiteArticleRequest::requestFinished( QNetworkReply * r )
     QUrl redirectUrl = possibleRedirectUrl.toUrl();
     if( !redirectUrl.isEmpty() )
     {
+      disconnect( netReply, 0, 0, 0 );
       netReply->deleteLater();
       netReply = mgr.get( QNetworkRequest( redirectUrl ) );
 #ifndef QT_NO_OPENSSL
@@ -163,7 +210,7 @@ void WebSiteArticleRequest::requestFinished( QNetworkReply * r )
     QByteArray replyData = netReply->readAll();
     QString articleString;
 
-    QTextCodec * codec = QTextCodec::codecForHtml( replyData, 0 );
+    QTextCodec * codec = WebSiteArticleRequest::codecForHtml( replyData );
     if( codec )
       articleString = codec->toUnicode( replyData );
     else
@@ -288,8 +335,19 @@ void WebSiteArticleRequest::requestFinished( QNetworkReply * r )
 
   }
   else
-    setErrorString( netReply->errorString() );
+  {
+    if( netReply->url().scheme() == "file" )
+    {
+      gdWarning( "WebSites: Failed loading article from \"%s\", reason: %s\n", dictPtr->getName().c_str(),
+                 netReply->errorString().toUtf8().data() );
+    }
+    else
+    {
+      setErrorString( netReply->errorString() );
+    }
+  }
 
+  disconnect( netReply, 0, 0, 0 );
   netReply->deleteLater();
 
   finish();
@@ -439,6 +497,7 @@ void WebSiteResourceRequest::requestFinished( QNetworkReply * r )
     QUrl redirectUrl = possibleRedirectUrl.toUrl();
     if( !redirectUrl.isEmpty() )
     {
+      disconnect( netReply, 0, 0, 0 );
       netReply->deleteLater();
       netReply = mgr.get( QNetworkRequest( redirectUrl ) );
 #ifndef QT_NO_OPENSSL
@@ -470,6 +529,7 @@ void WebSiteResourceRequest::requestFinished( QNetworkReply * r )
   else
     setErrorString( netReply->errorString() );
 
+  disconnect( netReply, 0, 0, 0 );
   netReply->deleteLater();
 
   finish();

@@ -377,8 +377,9 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
             wikiUrl.setPath( "/" );
   
             // Update any special index.php pages to be absolute
-            articleString.replace( QRegExp( "<a\\shref=\"(/(\\w*/)*index.php\\?)" ),
-                                   QString( "<a href=\"%1\\1" ).arg( wikiUrl.toString() ) );
+            Qt4x5::Regex::replace( articleString, "<a\\shref=\"(/(\\w*/)*index.php\\?)",
+                                   QString( "<a href=\"%1\\1" ).arg( wikiUrl.toString() ),
+                                   Qt::CaseSensitive, true );
 
             // audio tag
             QRegExp reg1( "<audio\\s.+</audio>", Qt::CaseInsensitive, QRegExp::RegExp2 );
@@ -405,7 +406,7 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
             }
 
             // audio url
-            articleString.replace( QRegExp( "<a\\s+href=\"(//upload\\.wikimedia\\.org/wikipedia/commons/[^\"'&]*\\.ogg)" ),
+            Qt4x5::Regex::replace( articleString, "<a\\s+href=\"(//upload\\.wikimedia\\.org/wikipedia/commons/[^\"'&]*\\.ogg)",
                                    QString::fromStdString( addAudioLink( string( "\"" ) + wikiUrl.scheme().toStdString() + ":\\1\"",
                                                                          this->dictPtr->getId() ) + "<a href=\"" + wikiUrl.scheme().toStdString() + ":\\1" ) );
 
@@ -415,9 +416,11 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
             articleString.replace( "src=\"/", "src=\"" + wikiUrl.toString() );
 
             // Replace the href="/foo/bar/Baz" to just href="Baz".
-            articleString.replace( QRegExp( "<a\\shref=\"/([\\w\\.]*/)*" ), "<a href=\"" );
+            Qt4x5::Regex::replace( articleString, "<a\\shref=\"/([\\w\\.]*/)*",
+                                   "<a href=\"", Qt::CaseSensitive, true );
 
             //fix audio
+            // For some reason QRegExp works faster than QRegularExpression in the replacement below.
             articleString.replace( QRegExp( "<button\\s+[^>]*(upload\\.wikimedia\\.org/wikipedia/commons/[^\"'&]*\\.ogg)[^>]*>\\s*<[^<]*</button>"),
                                             QString::fromStdString(addAudioLink( string( "\"" ) + wikiUrl.scheme().toStdString() + "://\\1\"", this->dictPtr->getId() ) +
                                             "<a href=\"" + wikiUrl.scheme().toStdString() + "://\\1\"><img src=\"qrcx://localhost/icons/playsound.png\" border=\"0\" alt=\"Play\"></a>" ) );
@@ -425,15 +428,16 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
             for( ; ; )
             {
               QString before = articleString;
-              articleString.replace( QRegExp( "<a href=\"([^/:\">#]*)_" ), "<a href=\"\\1 " );
+              Qt4x5::Regex::replace( articleString, "<a href=\"([^/:\">#]*)_", "<a href=\"\\1 " );
   
               if ( articleString == before )
                 break;
             }
 
             //fix file: url
-            articleString.replace( QRegExp("<a\\s+href=\"([^:/\"]*file%3A[^/\"]+\")", Qt::CaseInsensitive ),
-                                   QString( "<a href=\"%1/index.php?title=\\1" ).arg( url ));
+            Qt4x5::Regex::replace( articleString, "<a\\s+href=\"([^:/\"]*file%3A[^/\"]+\")",
+                                   QString( "<a href=\"%1/index.php?title=\\1" ).arg( url ),
+                                   Qt::CaseInsensitive );
 
             QDir regressionDir = QDir::home();
             regressionDir.cd("goldendict-debugging");

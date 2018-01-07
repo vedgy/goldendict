@@ -13,6 +13,13 @@
 #include "langcoder.hh"
 #include "qt4x5.hh"
 
+#include <QDir>
+#include <fstream>
+#include <iomanip>
+#include <chrono>
+using Clock = std::chrono::steady_clock;
+using Duration = Clock::duration;
+
 namespace MediaWiki {
 
 using namespace Dictionary;
@@ -269,7 +276,8 @@ void MediaWikiArticleRequest::addQuery( QNetworkAccessManager & mgr,
   Qt4x5::Url::addQueryItem( reqUrl, "page", gd::toQString( str ) );
 
   QNetworkReply * netReply = mgr.get( QNetworkRequest( reqUrl ) );
-  
+  netReply->setProperty("article", gd::toQString(str));
+
 #ifndef QT_NO_OPENSSL
 
   connect( netReply, SIGNAL( sslErrors( QList< QSslError > ) ),
@@ -309,10 +317,25 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
   
   bool updated = false;
 
+  QDir outputDir = QDir::home();
+  outputDir.cd("goldendict-debugging");
+  const QString outputFilePath = outputDir.filePath(
+              "timeOut_" + QTime::currentTime().toString("hh-mm-ss") + ".txt");
+  static std::ofstream timeOut(outputFilePath.toStdString());
+
+  decltype(Clock::now()) timeBegin;
+  decltype(timeBegin) timeEnd;
+  const auto printTime = [&](const char * desc) {
+        timeOut << std::fixed << std::setprecision(6) << std::chrono::duration_cast<std::chrono::microseconds>(timeEnd - timeBegin).count() / 1000.0 << " - " << desc << '\n';
+  };
+
   for( ; netReplies.size() && netReplies.front().second; netReplies.pop_front() )
   {
     QNetworkReply * netReply = netReplies.front().first;
-    
+
+    timeOut << "Processing article \"" << netReply->property("article").toString().toStdString() << "\"\n";
+    timeBegin = Clock::now();
+
     if ( netReply->error() == QNetworkReply::NoError )
     {
       QDomDocument dd;
@@ -327,6 +350,10 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
       }
       else
       {
+          timeEnd = Clock::now();
+          printTime("after setContent");
+          timeBegin = Clock::now();
+
         QDomNode parseNode = dd.namedItem( "api" ).namedItem( "parse" );
   
         if ( !parseNode.isNull() && parseNode.toElement().attribute( "revid" ) != "0" )
@@ -336,6 +363,10 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
           if ( !textNode.isNull() )
           {
             QString articleString = textNode.toElement().text();
+
+            timeEnd = Clock::now();
+            printTime("before replacements");
+            timeBegin = Clock::now();
 
             // Replace all ":" in links, remove '#' part in links to other articles
             int pos = 0;
@@ -370,12 +401,20 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
               pos += newLink.size();
             }
 
+            timeEnd = Clock::now();
+            printTime("after regLinks");
+            timeBegin = Clock::now();
+
             QUrl wikiUrl( url );
             wikiUrl.setPath( "/" );
   
             // Update any special index.php pages to be absolute
             articleString.replace( QRegExp( "<a\\shref=\"(/(\\w*/)*index.php\\?)" ),
                                    QString( "<a href=\"%1\\1" ).arg( wikiUrl.toString() ) );
+
+            timeEnd = Clock::now();
+            printTime("after index.php absolute");
+            timeBegin = Clock::now();
 
             // audio tag
             QRegExp reg1( "<audio\\s.+</audio>", Qt::CaseInsensitive, QRegExp::RegExp2 );
@@ -401,23 +440,43 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
                 break;
             }
 
+            timeEnd = Clock::now();
+            printTime("after reg1 and reg2");
+            timeBegin = Clock::now();
+
             // audio url
             articleString.replace( QRegExp( "<a\\s+href=\"(//upload\\.wikimedia\\.org/wikipedia/commons/[^\"'&]*\\.ogg)" ),
                                    QString::fromStdString( addAudioLink( string( "\"" ) + wikiUrl.scheme().toStdString() + ":\\1\"",
                                                                          this->dictPtr->getId() ) + "<a href=\"" + wikiUrl.scheme().toStdString() + ":\\1" ) );
+
+            timeEnd = Clock::now();
+            printTime("after audio url");
+            timeBegin = Clock::now();
 
             // Add url scheme to image source urls
             articleString.replace( " src=\"//", " src=\"" + wikiUrl.scheme() + "://" );
             //fix src="/foo/bar/Baz.png"
             articleString.replace( "src=\"/", "src=\"" + wikiUrl.toString() );
 
+            timeEnd = Clock::now();
+            printTime("after plain text replacements");
+            timeBegin = Clock::now();
+
             // Replace the href="/foo/bar/Baz" to just href="Baz".
             articleString.replace( QRegExp( "<a\\shref=\"/([\\w\\.]*/)*" ), "<a href=\"" );
+
+            timeEnd = Clock::now();
+            printTime("after href=\"/foo/bar/Baz\" -> href=\"Baz\"");
+            timeBegin = Clock::now();
 
             //fix audio
             articleString.replace( QRegExp( "<button\\s+[^>]*(upload\\.wikimedia\\.org/wikipedia/commons/[^\"'&]*\\.ogg)[^>]*>\\s*<[^<]*</button>"),
                                             QString::fromStdString(addAudioLink( string( "\"" ) + wikiUrl.scheme().toStdString() + "://\\1\"", this->dictPtr->getId() ) +
                                             "<a href=\"" + wikiUrl.scheme().toStdString() + "://\\1\"><img src=\"qrcx://localhost/icons/playsound.png\" border=\"0\" alt=\"Play\"></a>" ) );
+            timeEnd = Clock::now();
+            printTime("after fix audio");
+            timeBegin = Clock::now();
+
             // In those strings, change any underscores to spaces
             for( ; ; )
             {
@@ -428,9 +487,17 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
                 break;
             }
 
+            timeEnd = Clock::now();
+            printTime("after underscores to spaces");
+            timeBegin = Clock::now();
+
             //fix file: url
             articleString.replace( QRegExp("<a\\s+href=\"([^:/\"]*file%3A[^/\"]+\")", Qt::CaseInsensitive ),
                                    QString( "<a href=\"%1/index.php?title=\\1" ).arg( url ));
+
+            timeEnd = Clock::now();
+            printTime("after fix file: url (finished replacements)");
+            timeBegin = Clock::now();
 
             QByteArray articleBody = articleString.toUtf8();
   
@@ -459,6 +526,10 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
 
     disconnect( netReply, 0, 0, 0 );
     netReply->deleteLater();
+
+    timeEnd = Clock::now();
+    printTime("loop iteration end");
+    timeBegin = Clock::now();
   }
 
   if ( netReplies.empty() )
@@ -466,6 +537,11 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
   else
   if ( updated )
     update();
+
+  timeEnd = Clock::now();
+  printTime("after signals");
+  timeBegin = Clock::now();
+
 }
 
 sptr< WordSearchRequest > MediaWikiDictionary::prefixMatch( wstring const & word,

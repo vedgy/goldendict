@@ -7,11 +7,16 @@
 #include <QNetworkReply>
 #include <QUrl>
 #include <QtXml>
+#include <algorithm>
 #include <list>
 #include "gddebug.hh"
 #include "audiolink.hh"
 #include "langcoder.hh"
 #include "qt4x5.hh"
+
+#if IS_QT_5
+#include <QRegularExpression>
+#endif
 
 #include <QDir>
 #include <fstream>
@@ -481,6 +486,21 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
             timeBegin = Clock::now();
 
             // In those strings, change any underscores to spaces
+#if IS_QT_5
+            // This implementation outperforms the alternative code below
+            // by an order of magnitude, but does not compile with Qt4.
+            {
+              const QRegularExpression linkRegex( "<a\\s+href=\"[^/:\">#]+" );
+              QRegularExpressionMatchIterator it = linkRegex.globalMatch( articleString );
+              while( it.hasNext() )
+              {
+                const QRegularExpressionMatch match = it.next();
+                std::replace( articleString.begin() + match.capturedStart(),
+                              articleString.begin() + match.capturedEnd(),
+                              '_', ' ' );
+              }
+            }
+#else
             for( ; ; )
             {
               QString before = articleString;
@@ -489,6 +509,7 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
               if ( articleString == before )
                 break;
             }
+#endif
 
             timeEnd = Clock::now();
             printTime("after underscores to spaces");

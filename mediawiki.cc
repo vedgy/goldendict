@@ -13,6 +13,9 @@
 #include "langcoder.hh"
 #include "qt4x5.hh"
 
+#include <QDir>
+#include <fstream>
+
 namespace MediaWiki {
 
 using namespace Dictionary;
@@ -431,6 +434,13 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
             //fix file: url
             articleString.replace( QRegExp("<a\\s+href=\"([^:/\"]*file%3A[^/\"]+\")", Qt::CaseInsensitive ),
                                    QString( "<a href=\"%1/index.php?title=\\1" ).arg( url ));
+
+            QDir regressionDir = QDir::home();
+            regressionDir.cd("goldendict-debugging");
+            const QString regressionFilePath = regressionDir.filePath(
+                        "articleString_" + QTime::currentTime().toString("hh-mm-ss-z") + ".txt");
+            std::ofstream regressionFile(regressionFilePath.toStdString());
+            regressionFile << articleString.toStdString();
 
             QByteArray articleBody = articleString.toUtf8();
   

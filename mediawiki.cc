@@ -9,6 +9,7 @@
 #include <QtXml>
 #include <algorithm>
 #include <list>
+#include <memory>
 #include "gddebug.hh"
 #include "audiolink.hh"
 #include "langcoder.hh"
@@ -24,12 +25,15 @@ using namespace Dictionary;
 
 namespace {
 
+class MediaWikiFactory;
+
 class MediaWikiDictionary: public Dictionary::Class
 {
   string name;
   QString url, icon;
   QNetworkAccessManager & netMgr;
   quint32 langId;
+  std::auto_ptr< MediaWikiFactory > factory;
 
 public:
 
@@ -44,6 +48,8 @@ public:
     netMgr( netMgr_ ),
     langId( 0 )
   {
+    initializeFactory();
+
     int n = url.indexOf( "." );
     if( n == 2 || ( n > 3 && url[ n-3 ] == '/' ) )
       langId = LangCoder::code2toInt( url.mid( n - 2, 2 ).toLatin1().data() );
@@ -78,23 +84,10 @@ protected:
 
   virtual void loadIcon() throw();
 
+private:
+
+  void initializeFactory();
 };
-
-void MediaWikiDictionary::loadIcon() throw()
-{
-  if ( dictionaryIconLoaded )
-    return;
-
-  if( !icon.isEmpty() )
-  {
-    QFileInfo fInfo(  QDir( Config::getConfigDir() ), icon );
-    if( fInfo.isFile() )
-      loadIconFromFile( fInfo.absoluteFilePath(), true );
-  }
-  if( dictionaryIcon.isNull() )
-    dictionaryIcon = dictionaryNativeIcon = QIcon(":/icons/icon32_wiki.png");
-  dictionaryIconLoaded = true;
-}
 
 class MediaWikiWordSearchRequest: public MediaWikiWordSearchRequestSlots
 {
@@ -318,8 +311,15 @@ class MediaWikiArticleRequest: public MediaWikiDataRequestSlots
 
 public:
 
-  MediaWikiArticleRequest( QString const & url, QNetworkAccessManager & mgr,
-                           Class * dictPtr_ );
+  /// None of the data members in this struct may be null.
+  struct InitData
+  {
+    QString url;
+    QNetworkAccessManager * netMgr;
+    Class * dictPtr;
+  };
+
+  explicit MediaWikiArticleRequest( InitData const & data );
 
   void addQuery( wstring const & word );
 
@@ -340,10 +340,8 @@ void MediaWikiArticleRequest::cancel()
   finish();
 }
 
-MediaWikiArticleRequest::MediaWikiArticleRequest( QString const & url_,
-                                                  QNetworkAccessManager & mgr,
-                                                  Class * dictPtr_ ):
-  url( url_ ), netMgr( mgr ), dictPtr( dictPtr_ )
+MediaWikiArticleRequest::MediaWikiArticleRequest( InitData const & data ):
+  url( data.url ), netMgr( *data.netMgr ), dictPtr( data.dictPtr )
 {
   connect( &netMgr, SIGNAL( finished( QNetworkReply * ) ),
            this, SLOT( requestFinished( QNetworkReply * ) ),
@@ -532,6 +530,24 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
     update();
 }
 
+class MediaWikiFactory
+{
+  Q_DISABLE_COPY( MediaWikiFactory )
+public:
+
+  MediaWikiFactory() {}
+  virtual ~MediaWikiFactory() {}
+
+  virtual QIcon defaultIcon() const { return QIcon( ":/icons/icon32_wiki.png" ); }
+
+  typedef MediaWikiArticleRequest::InitData InitData;
+
+  virtual sptr< MediaWikiArticleRequest > articleRequest( InitData const & data ) const
+  {
+    return new MediaWikiArticleRequest( data );
+  }
+};
+
 sptr< WordSearchRequest > MediaWikiDictionary::prefixMatch( wstring const & word,
                                                             unsigned long maxResults )
   throw( std::exception )
@@ -560,8 +576,8 @@ sptr< DataRequest > MediaWikiDictionary::getArticle( wstring const & word,
   }
   else
   {
-    sptr< MediaWikiArticleRequest > request(
-          new MediaWikiArticleRequest( url, netMgr, this ) );
+    const MediaWikiArticleRequest::InitData initData = { url, &netMgr, this };
+    sptr< MediaWikiArticleRequest > request = factory->articleRequest( initData );
 
     request->addQuery( word );
     for( std::size_t i = 0; i < alts.size(); ++i )
@@ -569,6 +585,27 @@ sptr< DataRequest > MediaWikiDictionary::getArticle( wstring const & word,
 
     return request;
   }
+}
+
+void MediaWikiDictionary::loadIcon() throw()
+{
+  if( dictionaryIconLoaded )
+    return;
+
+  if( !icon.isEmpty() )
+  {
+    QFileInfo fInfo(  QDir( Config::getConfigDir() ), icon );
+    if( fInfo.isFile() )
+      loadIconFromFile( fInfo.absoluteFilePath(), true );
+  }
+  if( dictionaryIcon.isNull() )
+    dictionaryIcon = dictionaryNativeIcon = factory->defaultIcon();
+  dictionaryIconLoaded = true;
+}
+
+void MediaWikiDictionary::initializeFactory()
+{
+  factory.reset( new MediaWikiFactory );
 }
 
 }

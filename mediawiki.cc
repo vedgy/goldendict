@@ -285,6 +285,31 @@ void RootBasedUrlFixer::fixUrl( QString & url )
   }
 }
 
+void underscoresToSpacesInLinks( QString & articleString )
+{
+#if IS_QT_5
+  // This implementation outperforms the alternative code below
+  // by an order of magnitude, but does not compile with Qt4.
+  const QRegularExpression linkRegex( "<a\\s+href=\"[^/:\">#]+" );
+  QRegularExpressionMatchIterator it = linkRegex.globalMatch( articleString );
+  while( it.hasNext() )
+  {
+    const QRegularExpressionMatch match = it.next();
+    std::replace( articleString.begin() + match.capturedStart(),
+                  articleString.begin() + match.capturedEnd(),
+                  '_', ' ' );
+  }
+#else
+  for( ; ; )
+  {
+    QString before = articleString;
+    Qt4x5::Regex::replace( articleString, "<a href=\"([^/:\">#]*)_", "<a href=\"\\1 " );
+    if( articleString == before )
+      break;
+  }
+#endif
+}
+
 class MediaWikiArticleRequest: public MediaWikiDataRequestSlots
 {
   typedef std::list< std::pair< QNetworkReply *, bool > > NetReplies;
@@ -302,6 +327,9 @@ public:
 private:
 
   void addQuery( QNetworkAccessManager & mgr, wstring const & word );
+
+  void processArticle( QString & articleString ) const;
+  void appendArticleToData( QString const & articleString );
 
   virtual void requestFinished( QNetworkReply * );
   Class * dictPtr;
@@ -352,6 +380,84 @@ void MediaWikiArticleRequest::addQuery( QNetworkAccessManager & mgr,
 #endif
 
   netReplies.push_back( std::make_pair( netReply, false ) );
+}
+
+void MediaWikiArticleRequest::processArticle( QString & articleString ) const
+{
+  articleString = RootBasedUrlFixer::fixedArticle( articleString );
+
+  QUrl wikiUrl( url );
+  wikiUrl.setPath( "/" );
+
+  // Update any special index.php pages to be absolute
+  Qt4x5::Regex::replace( articleString, "<a\\shref=\"(/(\\w*/)*index.php\\?)",
+                         QString( "<a href=\"%1\\1" ).arg( wikiUrl.toString() ),
+                         Qt::CaseSensitive, true );
+
+  // audio tag
+  QRegExp reg1( "<audio\\s.+</audio>", Qt::CaseInsensitive, QRegExp::RegExp2 );
+  reg1.setMinimal( true );
+  QRegExp reg2( "<source\\s+src=\"([^\"]+)", Qt::CaseInsensitive );
+  int pos = 0;
+  for( ; ; )
+  {
+    pos = reg1.indexIn( articleString, pos );
+    if( pos >= 0 )
+    {
+      QString tag = reg1.cap();
+      if( reg2.indexIn( tag ) >= 0 )
+      {
+        QString ref = reg2.cap( 1 );
+        QString audio_url = "<a href=\"" + ref
+                            + "\"><img src=\"qrcx://localhost/icons/playsound.png\" border=\"0\" align=\"absmiddle\" alt=\"Play\"/></a>";
+        articleString.replace( pos, tag.length(), audio_url );
+      }
+      pos += 1;
+    }
+    else
+      break;
+  }
+
+  // audio url
+  Qt4x5::Regex::replace( articleString, "<a\\s+href=\"(//upload\\.wikimedia\\.org/wikipedia/commons/[^\"'&]*\\.ogg)",
+                         QString::fromStdString( addAudioLink( string( "\"" ) + wikiUrl.scheme().toStdString() + ":\\1\"",
+                                                               this->dictPtr->getId() ) + "<a href=\"" + wikiUrl.scheme().toStdString() + ":\\1" ) );
+
+  // Add url scheme to image source urls
+  articleString.replace( " src=\"//", " src=\"" + wikiUrl.scheme() + "://" );
+  //fix src="/foo/bar/Baz.png"
+  articleString.replace( "src=\"/", "src=\"" + wikiUrl.toString() );
+
+  // Remove the /wiki/ prefix from links
+  // For some reason QRegExp works faster than QRegularExpression in the replacement below.
+  articleString.replace( QRegExp( "<a\\shref=\"/wiki/" ), "<a href=\"" );
+
+  //fix audio
+  // For some reason QRegExp works faster than QRegularExpression in the replacement below.
+  articleString.replace( QRegExp( "<button\\s+[^>]*(upload\\.wikimedia\\.org/wikipedia/commons/[^\"'&]*\\.ogg)[^>]*>\\s*<[^<]*</button>"),
+                                  QString::fromStdString(addAudioLink( string( "\"" ) + wikiUrl.scheme().toStdString() + "://\\1\"", this->dictPtr->getId() ) +
+                                  "<a href=\"" + wikiUrl.scheme().toStdString() + "://\\1\"><img src=\"qrcx://localhost/icons/playsound.png\" border=\"0\" alt=\"Play\"></a>" ) );
+
+  underscoresToSpacesInLinks( articleString );
+
+  //fix file: url
+  Qt4x5::Regex::replace( articleString, "<a\\s+href=\"([^:/\"]*file%3A[^/\"]+\")",
+                         QString( "<a href=\"%1/index.php?title=\\1" ).arg( url ),
+                         Qt::CaseInsensitive );
+}
+
+void MediaWikiArticleRequest::appendArticleToData( QString const & articleString )
+{
+  QByteArray articleBody = articleString.toUtf8();
+  articleBody.prepend( dictPtr->isToLanguageRTL() ? "<div class=\"mwiki\" dir=\"rtl\">" :
+                                                    "<div class=\"mwiki\">" );
+  articleBody.append( "</div>" );
+
+  Mutex::Lock _( dataMutex );
+  size_t prevSize = data.size();
+  data.resize( prevSize + articleBody.size() );
+  memcpy( &data.front() + prevSize, articleBody.data(), articleBody.size() );
+  hasAnyData = true;
 }
 
 void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
@@ -410,107 +516,8 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
           if ( !textNode.isNull() )
           {
             QString articleString = textNode.toElement().text();
-
-            articleString = RootBasedUrlFixer::fixedArticle( articleString );
-
-            QUrl wikiUrl( url );
-            wikiUrl.setPath( "/" );
-  
-            // Update any special index.php pages to be absolute
-            Qt4x5::Regex::replace( articleString, "<a\\shref=\"(/(\\w*/)*index.php\\?)",
-                                   QString( "<a href=\"%1\\1" ).arg( wikiUrl.toString() ),
-                                   Qt::CaseSensitive, true );
-
-            // audio tag
-            QRegExp reg1( "<audio\\s.+</audio>", Qt::CaseInsensitive, QRegExp::RegExp2 );
-            reg1.setMinimal( true );
-            QRegExp reg2( "<source\\s+src=\"([^\"]+)", Qt::CaseInsensitive );
-            int pos = 0;
-            for( ; ; )
-            {
-              pos = reg1.indexIn( articleString, pos );
-              if( pos >= 0 )
-              {
-                QString tag = reg1.cap();
-                if( reg2.indexIn( tag ) >= 0 )
-                {
-                  QString ref = reg2.cap( 1 );
-                  QString audio_url = "<a href=\"" + ref
-                                      + "\"><img src=\"qrcx://localhost/icons/playsound.png\" border=\"0\" align=\"absmiddle\" alt=\"Play\"/></a>";
-                  articleString.replace( pos, tag.length(), audio_url );
-                }
-                pos += 1;
-              }
-              else
-                break;
-            }
-
-            // audio url
-            Qt4x5::Regex::replace( articleString, "<a\\s+href=\"(//upload\\.wikimedia\\.org/wikipedia/commons/[^\"'&]*\\.ogg)",
-                                   QString::fromStdString( addAudioLink( string( "\"" ) + wikiUrl.scheme().toStdString() + ":\\1\"",
-                                                                         this->dictPtr->getId() ) + "<a href=\"" + wikiUrl.scheme().toStdString() + ":\\1" ) );
-
-            // Add url scheme to image source urls
-            articleString.replace( " src=\"//", " src=\"" + wikiUrl.scheme() + "://" );
-            //fix src="/foo/bar/Baz.png"
-            articleString.replace( "src=\"/", "src=\"" + wikiUrl.toString() );
-
-            // Remove the /wiki/ prefix from links
-            // For some reason QRegExp works faster than QRegularExpression in the replacement below.
-            articleString.replace( QRegExp( "<a\\shref=\"/wiki/" ), "<a href=\"" );
-
-            //fix audio
-            // For some reason QRegExp works faster than QRegularExpression in the replacement below.
-            articleString.replace( QRegExp( "<button\\s+[^>]*(upload\\.wikimedia\\.org/wikipedia/commons/[^\"'&]*\\.ogg)[^>]*>\\s*<[^<]*</button>"),
-                                            QString::fromStdString(addAudioLink( string( "\"" ) + wikiUrl.scheme().toStdString() + "://\\1\"", this->dictPtr->getId() ) +
-                                            "<a href=\"" + wikiUrl.scheme().toStdString() + "://\\1\"><img src=\"qrcx://localhost/icons/playsound.png\" border=\"0\" alt=\"Play\"></a>" ) );
-            // In those strings, change any underscores to spaces
-#if IS_QT_5
-            // This implementation outperforms the alternative code below
-            // by an order of magnitude, but does not compile with Qt4.
-            {
-              const QRegularExpression linkRegex( "<a\\s+href=\"[^/:\">#]+" );
-              QRegularExpressionMatchIterator it = linkRegex.globalMatch( articleString );
-              while( it.hasNext() )
-              {
-                const QRegularExpressionMatch match = it.next();
-                std::replace( articleString.begin() + match.capturedStart(),
-                              articleString.begin() + match.capturedEnd(),
-                              '_', ' ' );
-              }
-            }
-#else
-            for( ; ; )
-            {
-              QString before = articleString;
-              Qt4x5::Regex::replace( articleString, "<a href=\"([^/:\">#]*)_", "<a href=\"\\1 " );
-  
-              if ( articleString == before )
-                break;
-            }
-#endif
-
-            //fix file: url
-            Qt4x5::Regex::replace( articleString, "<a\\s+href=\"([^:/\"]*file%3A[^/\"]+\")",
-                                   QString( "<a href=\"%1/index.php?title=\\1" ).arg( url ),
-                                   Qt::CaseInsensitive );
-
-            QByteArray articleBody = articleString.toUtf8();
-  
-            articleBody.prepend( dictPtr->isToLanguageRTL() ? "<div class=\"mwiki\" dir=\"rtl\">" :
-                                                              "<div class=\"mwiki\">" );
-            articleBody.append( "</div>" );
-  
-            Mutex::Lock _( dataMutex );
-
-            size_t prevSize = data.size();
-            
-            data.resize( prevSize + articleBody.size() );
-  
-            memcpy( &data.front() + prevSize, articleBody.data(), articleBody.size() );
-  
-            hasAnyData = true;
-
+            processArticle( articleString );
+            appendArticleToData( articleString );
             updated = true;
           }
         }

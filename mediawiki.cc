@@ -325,14 +325,18 @@ public:
 
   virtual void cancel();
 
+protected:
+
+  Class * const dictPtr;
+
 private:
 
+  virtual void preprocessArticle( QString & articleString ) const { Q_UNUSED( articleString ) }
   void processArticle( QString & articleString ) const;
   void appendArticleToData( QString const & articleString );
 
   virtual void requestFinished( QNetworkReply * );
   QNetworkAccessManager & netMgr;
-  Class * dictPtr;
 };
 
 void MediaWikiArticleRequest::cancel()
@@ -341,7 +345,7 @@ void MediaWikiArticleRequest::cancel()
 }
 
 MediaWikiArticleRequest::MediaWikiArticleRequest( InitData const & data ):
-  url( data.url ), netMgr( *data.netMgr ), dictPtr( data.dictPtr )
+  url( data.url ), dictPtr( data.dictPtr ), netMgr( *data.netMgr )
 {
   connect( &netMgr, SIGNAL( finished( QNetworkReply * ) ),
            this, SLOT( requestFinished( QNetworkReply * ) ),
@@ -508,6 +512,7 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
           if ( !textNode.isNull() )
           {
             QString articleString = textNode.toElement().text();
+            preprocessArticle( articleString );
             processArticle( articleString );
             appendArticleToData( articleString );
             updated = true;
@@ -545,6 +550,51 @@ public:
   virtual sptr< MediaWikiArticleRequest > articleRequest( InitData const & data ) const
   {
     return new MediaWikiArticleRequest( data );
+  }
+};
+
+class FandomArticleRequest: public MediaWikiArticleRequest
+{
+public:
+
+  explicit FandomArticleRequest( InitData const & data ):
+    MediaWikiArticleRequest( data ) {}
+
+private:
+
+  virtual void preprocessArticle( QString & articleString ) const;
+};
+
+void FandomArticleRequest::preprocessArticle( QString & articleString ) const
+{
+  // Lazy loading does not work in goldendict -> display these images
+  // by switching to the simpler alternative format under <noscript> tag.
+  Qt4x5::Regex::replace( articleString,
+                         "<img\\s[^>]+lzy lzyPlcHld[^>]+>\\s*<noscript>\\s*(<img\\s[^<]+)</noscript>",
+                         "\\1" );
+
+  // audio url
+  // For some reason QRegExp works faster than QRegularExpression in the replacement below.
+  articleString.replace(
+        QRegExp( "<a href=(\"https://vignette.wikia.nocookie.net/[^\"]+\\.ogg)(/revision/latest)?(\\?cb=\\d+)?\"" ),
+        QString::fromStdString( addAudioLink( "\\1\"", this->dictPtr->getId() ) + "<a href=\\1\"" ) );
+
+  // Remove absolute height from scrollbox lines to ensure that everything inside
+  // the scrollable container is visible and does not overlap the contents below.
+  // For some reason QRegExp works faster than QRegularExpression in the replacement below.
+  articleString.replace( QRegExp( "(class=\"scrollbox\"[^\\n]*[^-])height:\\d+px;" ),
+                         "\\1" );
+}
+
+class FandomFactory: public MediaWikiFactory
+{
+public:
+
+  virtual QIcon defaultIcon() const { return QIcon( ":/icons/icon32_fandom.png" ); }
+
+  virtual sptr< MediaWikiArticleRequest > articleRequest( InitData const & data ) const
+  {
+    return new FandomArticleRequest( data );
   }
 };
 
@@ -605,7 +655,10 @@ void MediaWikiDictionary::loadIcon() throw()
 
 void MediaWikiDictionary::initializeFactory()
 {
-  factory.reset( new MediaWikiFactory );
+  if( url.endsWith( ".wikia.com" ) )
+    factory.reset( new FandomFactory );
+  else
+    factory.reset( new MediaWikiFactory );
 }
 
 }

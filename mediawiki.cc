@@ -9,6 +9,7 @@
 #include <QtXml>
 #include <algorithm>
 #include <list>
+#include <queue>
 #include <memory>
 #include "gddebug.hh"
 #include "audiolink.hh"
@@ -334,13 +335,15 @@ public:
 
   explicit MediaWikiArticleRequest( InitData const & data );
 
-  void addQuery( wstring const & word );
+  void addQuery( wstring const & word ) { doAddQuery( word ); }
 
   virtual void cancel();
 
 protected:
 
   QNetworkReply * createQuery( wstring const & word );
+
+  virtual QNetworkReply const * doAddQuery( wstring const & word );
 
   virtual bool preprocessArticle( QString & articleString )
   {
@@ -353,6 +356,12 @@ protected:
   Class * const dictPtr;
 
 private:
+
+  virtual void replyHandled( QNetworkReply const * reply, bool textFound )
+  {
+    Q_UNUSED( reply )
+    Q_UNUSED( textFound )
+  }
 
   void processArticle( QString & articleString ) const;
   void appendArticleToData( QString const & articleString );
@@ -402,10 +411,11 @@ QNetworkReply * MediaWikiArticleRequest::createQuery( wstring const & str )
   return netReply;
 }
 
-void MediaWikiArticleRequest::addQuery( wstring const & word )
+QNetworkReply const * MediaWikiArticleRequest::doAddQuery( wstring const & word )
 {
   QNetworkReply * const reply = createQuery( word );
   netReplies.push_back( std::make_pair( reply, false ) );
+  return reply;
 }
 
 void MediaWikiArticleRequest::processArticle( QString & articleString ) const
@@ -519,6 +529,8 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
   {
     QNetworkReply * netReply = netReplies.front().first;
     netReplies.pop_front();
+
+    bool textFound = false;
     
     if ( netReply->error() == QNetworkReply::NoError )
     {
@@ -543,6 +555,7 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
           if ( !textNode.isNull() )
           {
             QString articleString = textNode.toElement().text();
+            textFound = true;
             if( preprocessArticle( articleString ) )
             {
               processArticle( articleString );
@@ -556,6 +569,8 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
     }
     else
       setErrorString( netReply->errorString() );
+
+    replyHandled( netReply, textFound );
 
     disconnect( netReply, 0, 0, 0 );
     netReply->deleteLater();
@@ -675,6 +690,63 @@ bool RedirectingArticleRequest::preprocessArticle( QString & articleString )
 void RedirectingArticleRequest::prependQuery( wstring const & str )
 {
   netReplies.push_front( std::make_pair( createQuery( str ), false ) );
+}
+
+/// If the selected word does not end with preferableSuffix, this class requests
+/// the definition of the word with preferableSuffix appended. If this modified
+/// request fails, the definition of the original word is requested.
+class SuffixAddingArticleRequest: public RedirectingArticleRequest
+{
+public:
+
+  explicit SuffixAddingArticleRequest( InitData const & data,
+                                       QString const & redirectLinkDistinction_,
+                                       std::wstring const & preferableSuffix_ ):
+    RedirectingArticleRequest( data, redirectLinkDistinction_ ),
+    preferableSuffix( preferableSuffix_ )
+  {}
+
+protected:
+
+  virtual QNetworkReply const * doAddQuery( wstring const & word );
+
+private:
+
+  virtual void replyHandled( QNetworkReply const * reply, bool textFound );
+
+  const std::wstring preferableSuffix;
+
+  struct Replacement
+  {
+    QNetworkReply const * reply;
+    std::wstring originalWord;
+  };
+  /// The relative QNetworkReply order in replacements is the same as in netReplies.
+  std::queue< Replacement > replacements;
+};
+
+QNetworkReply const * SuffixAddingArticleRequest::doAddQuery( wstring const & word )
+{
+  if( std::equal( word.end() - preferableSuffix.size(), word.end(), preferableSuffix.begin() ) )
+    return RedirectingArticleRequest::doAddQuery( word );
+
+  // Try the corresponding preferable article first.
+  QNetworkReply const * const reply = RedirectingArticleRequest::doAddQuery( word + preferableSuffix );
+  Replacement replacement = { reply, word };
+  replacements.push( replacement );
+  return reply;
+}
+
+void SuffixAddingArticleRequest::replyHandled( QNetworkReply const * reply, bool textFound )
+{
+  if( replacements.empty() || reply != replacements.front().reply )
+    return;
+  if( !textFound )
+  {
+    // Couldn't load the preferable article -> try the original word instead.
+    prependQuery( replacements.front().originalWord );
+  }
+  replacements.pop();
 }
 
 sptr< WordSearchRequest > MediaWikiDictionary::prefixMatch( wstring const & word,

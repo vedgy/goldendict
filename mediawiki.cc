@@ -303,12 +303,25 @@ void underscoresToSpacesInLinks( QString & articleString )
 #endif
 }
 
+/// @return The wiki word inside the link that contains @p linkDistinction
+/// or an empty string if @p article does not contain such a link.
+std::wstring findWikiLink( QString const & article, QString const & linkDistinction )
+{
+  const int distinctionPosition = article.indexOf( linkDistinction );
+  if( distinctionPosition >= 0 )
+  {
+    const int linkPosition = article.lastIndexOf( QRegExp( "[<>]" ), distinctionPosition );
+    const QString linkForepart = article.mid( linkPosition,
+                                              distinctionPosition - linkPosition );
+    const QRegExp linkPattern( "<a href=\"/wiki/([^\"]+)\".*" );
+    if( linkPattern.exactMatch( linkForepart ) )
+      return gd::toWString( linkPattern.cap( 1 ) );
+  }
+  return std::wstring();
+}
+
 class MediaWikiArticleRequest: public MediaWikiDataRequestSlots
 {
-  typedef std::list< std::pair< QNetworkReply *, bool > > NetReplies;
-  NetReplies netReplies;
-  QString url;
-
 public:
 
   /// None of the data members in this struct may be null.
@@ -327,15 +340,26 @@ public:
 
 protected:
 
+  QNetworkReply * createQuery( wstring const & word );
+
+  virtual bool preprocessArticle( QString & articleString )
+  {
+    Q_UNUSED( articleString )
+    return true;
+  }
+
+  typedef std::list< std::pair< QNetworkReply *, bool > > NetReplies;
+  NetReplies netReplies;
   Class * const dictPtr;
 
 private:
 
-  virtual void preprocessArticle( QString & articleString ) const { Q_UNUSED( articleString ) }
   void processArticle( QString & articleString ) const;
   void appendArticleToData( QString const & articleString );
 
   virtual void requestFinished( QNetworkReply * );
+
+  const QString url;
   QNetworkAccessManager & netMgr;
 };
 
@@ -345,14 +369,14 @@ void MediaWikiArticleRequest::cancel()
 }
 
 MediaWikiArticleRequest::MediaWikiArticleRequest( InitData const & data ):
-  url( data.url ), dictPtr( data.dictPtr ), netMgr( *data.netMgr )
+  dictPtr( data.dictPtr ), url( data.url ), netMgr( *data.netMgr )
 {
   connect( &netMgr, SIGNAL( finished( QNetworkReply * ) ),
            this, SLOT( requestFinished( QNetworkReply * ) ),
            Qt::QueuedConnection );
 }
 
-void MediaWikiArticleRequest::addQuery( wstring const & str )
+QNetworkReply * MediaWikiArticleRequest::createQuery( wstring const & str )
 {
   Q_ASSERT( !isFinished() && "Finished request should not make queries!" );
 
@@ -375,7 +399,13 @@ void MediaWikiArticleRequest::addQuery( wstring const & str )
 
 #endif
 
-  netReplies.push_back( std::make_pair( netReply, false ) );
+  return netReply;
+}
+
+void MediaWikiArticleRequest::addQuery( wstring const & word )
+{
+  QNetworkReply * const reply = createQuery( word );
+  netReplies.push_back( std::make_pair( reply, false ) );
 }
 
 void MediaWikiArticleRequest::processArticle( QString & articleString ) const
@@ -485,9 +515,10 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
   
   bool updated = false;
 
-  for( ; netReplies.size() && netReplies.front().second; netReplies.pop_front() )
+  while( netReplies.size() && netReplies.front().second )
   {
     QNetworkReply * netReply = netReplies.front().first;
+    netReplies.pop_front();
     
     if ( netReply->error() == QNetworkReply::NoError )
     {
@@ -512,10 +543,12 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
           if ( !textNode.isNull() )
           {
             QString articleString = textNode.toElement().text();
-            preprocessArticle( articleString );
-            processArticle( articleString );
-            appendArticleToData( articleString );
-            updated = true;
+            if( preprocessArticle( articleString ) )
+            {
+              processArticle( articleString );
+              appendArticleToData( articleString );
+              updated = true;
+            }
           }
         }
       }
@@ -560,12 +593,12 @@ public:
   explicit FandomArticleRequest( InitData const & data ):
     MediaWikiArticleRequest( data ) {}
 
-private:
+protected:
 
-  virtual void preprocessArticle( QString & articleString ) const;
+  virtual bool preprocessArticle( QString & articleString );
 };
 
-void FandomArticleRequest::preprocessArticle( QString & articleString ) const
+bool FandomArticleRequest::preprocessArticle( QString & articleString )
 {
   // Lazy loading does not work in goldendict -> display these images
   // by switching to the simpler alternative format under <noscript> tag.
@@ -584,6 +617,8 @@ void FandomArticleRequest::preprocessArticle( QString & articleString ) const
   // For some reason QRegExp works faster than QRegularExpression in the replacement below.
   articleString.replace( QRegExp( "(class=\"scrollbox\"[^\\n]*[^-])height:\\d+px;" ),
                          "\\1" );
+
+  return true;
 }
 
 class FandomFactory: public MediaWikiFactory
@@ -597,6 +632,50 @@ public:
     return new FandomArticleRequest( data );
   }
 };
+
+/// This class searches for redirectLinkDistinction in one of the links
+/// inside the article text. If found, displays the definition of the word that
+/// is this link's target instead of the original article text.
+class RedirectingArticleRequest: public FandomArticleRequest
+{
+public:
+
+  explicit RedirectingArticleRequest( InitData const & data,
+                                      QString const & redirectLinkDistinction_ ):
+    FandomArticleRequest( data ), redirectLinkDistinction( redirectLinkDistinction_ )
+  {}
+
+protected:
+
+  virtual bool preprocessArticle( QString & articleString );
+
+  void prependQuery( wstring const & str );
+
+private:
+
+  const QString redirectLinkDistinction;
+};
+
+bool RedirectingArticleRequest::preprocessArticle( QString & articleString )
+{
+  if( !redirectLinkDistinction.isEmpty() )
+  {
+    const std::wstring wikiWord = findWikiLink( articleString, redirectLinkDistinction );
+    if( !wikiWord.empty() )
+    {
+      // Found our link distintion -> redirect.
+      prependQuery( wikiWord );
+      return false;
+    }
+  }
+
+  return FandomArticleRequest::preprocessArticle( articleString );
+}
+
+void RedirectingArticleRequest::prependQuery( wstring const & str )
+{
+  netReplies.push_front( std::make_pair( createQuery( str ), false ) );
+}
 
 sptr< WordSearchRequest > MediaWikiDictionary::prefixMatch( wstring const & word,
                                                             unsigned long maxResults )

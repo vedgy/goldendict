@@ -125,7 +125,11 @@ MediaWikiWordSearchRequest::MediaWikiWordSearchRequest( wstring const & str,
   GD_DPRINTF( "request begin\n" );
   QUrl reqUrl( url + "/api.php?action=query&list=allpages&aplimit=40&format=xml" );
 
-  Qt4x5::Url::addQueryItem( reqUrl, "apfrom", gd::toQString( str ) );
+#if IS_QT_5
+  Qt4x5::Url::addQueryItem( reqUrl, "apfrom", gd::toQString( str ).replace( '+', "%2B" ) );
+#else
+  reqUrl.addEncodedQueryItem( "apfrom", QUrl::toPercentEncoding( gd::toQString( str ) ) );
+#endif
 
   netReply = mgr.get( QNetworkRequest( reqUrl ) );
 
@@ -266,7 +270,11 @@ void MediaWikiArticleRequest::addQuery( QNetworkAccessManager & mgr,
 
   QUrl reqUrl( url + "/api.php?action=parse&prop=text|revid&format=xml&redirects" );
 
-  Qt4x5::Url::addQueryItem( reqUrl, "page", gd::toQString( str ) );
+#if IS_QT_5
+  Qt4x5::Url::addQueryItem( reqUrl, "page", gd::toQString( str ).replace( '+', "%2B" ) );
+#else
+  reqUrl.addEncodedQueryItem( "page", QUrl::toPercentEncoding( gd::toQString( str ) ) );
+#endif
 
   QNetworkReply * netReply = mgr.get( QNetworkRequest( reqUrl ) );
   
@@ -411,8 +419,8 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
             //fix src="/foo/bar/Baz.png"
             articleString.replace( "src=\"/", "src=\"" + wikiUrl.toString() );
 
-            // Replace the href="/foo/bar/Baz" to just href="Baz".
-            articleString.replace( QRegExp( "<a\\shref=\"/([\\w\\.]*/)*" ), "<a href=\"" );
+            // Remove the /wiki/ prefix from links
+            articleString.replace( QRegExp( "<a\\shref=\"/wiki/" ), "<a href=\"" );
 
             //fix audio
             articleString.replace( QRegExp( "<button\\s+[^>]*(upload\\.wikimedia\\.org/wikipedia/commons/[^\"'&]*\\.ogg)[^>]*>\\s*<[^<]*</button>"),

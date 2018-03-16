@@ -185,7 +185,9 @@ using std::string;
 
   void AllowFrameReply::readDataFromBase()
   {
-    QByteArray data = baseReply->readAll();
+    QByteArray data;
+    data.resize( baseReply->bytesAvailable() );
+    baseReply->read( data.data(), data.size() );
     buffer += data;
     emit readyRead();
   }
@@ -434,9 +436,7 @@ sptr< Dictionary::DataRequest > ArticleNetworkAccessManager::getResource(
 
     string id = url.host().toStdString();
 
-    bool search = ( id == "search" );
-
-    if ( !search )
+    if ( !Dictionary::ResourceSearch::isSearchHost( url.host() ) )
     {
       for( unsigned x = 0; x < dictionaries.size(); ++x )
         if ( dictionaries[ x ]->getId() == id )

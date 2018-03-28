@@ -645,12 +645,15 @@ bool FandomArticleRequest::preprocessArticle( QString & articleString )
 {
   // Lazy loading does not work in goldendict -> display these images
   // by switching to the simpler alternative format under <noscript> tag.
+  const QString lzyImgTag = "<img\\s[^>]+lzy lzyPlcHld[^>]+>";
+  const QString noscriptImgTag = "<noscript>\\s*(<img\\s[^<]+)</noscript>";
   #if QT_VERSION >= QT_VERSION_CHECK( 5, 0, 0 )
-    articleString.replace( QRegularExpression( "<img\\s[^>]+lzy lzyPlcHld[^>]+>\\s*<noscript>\\s*(<img\\s[^<]+)</noscript>" ),
+    articleString.replace( QRegularExpression( lzyImgTag + "\\s*" + noscriptImgTag ), "\\1" );
+    articleString.replace( QRegularExpression( noscriptImgTag + "\\s*" + lzyImgTag ), "\\1" );
   #else
-    articleString.replace( QRegExp( "<img\\s[^>]+lzy lzyPlcHld[^>]+>\\s*<noscript>\\s*(<img\\s[^<]+)</noscript>" ),
+    articleString.replace( QRegExp( lzyImgTag + "\\s*" + noscriptImgTag ), "\\1" );
+    articleString.replace( QRegExp( noscriptImgTag + "\\s*" + lzyImgTag ), "\\1" );
   #endif
-                           "\\1" );
 
   // audio url
   // For some reason QRegExp works faster than QRegularExpression in the replacement below on Linux.
@@ -686,15 +689,17 @@ wstring findWikiLink( QString const & article, QString const & linkDistinction )
   // Since the first search just below probably fails in most cases,
   // it should be optimized instead of trying to squeeze the entire regexp into it.
   const int distinctionPosition = article.indexOf( linkDistinction );
-  if( distinctionPosition >= 0 )
-  {
-    const int linkPosition = article.lastIndexOf( QRegExp( "[<>]" ), distinctionPosition );
-    const QString linkForepart = article.mid( linkPosition,
-                                              distinctionPosition - linkPosition );
-    const QRegExp linkPattern( "<a href=\"/wiki/([^\"]+)\".*" );
-    if( linkPattern.exactMatch( linkForepart ) )
-      return gd::toWString( linkPattern.cap( 1 ) );
-  }
+  if( distinctionPosition < 0 )
+    return wstring();
+  const int linkPosition = article.lastIndexOf( QRegExp( "[<>]" ), distinctionPosition );
+  if( linkPosition < 0 )
+    return wstring();
+
+  const QString linkForepart = article.mid( linkPosition,
+                                            distinctionPosition - linkPosition );
+  const QRegExp linkPattern( "<a href=\"/wiki/([^\"]+)\".*" );
+  if( linkPattern.exactMatch( linkForepart ) )
+    return gd::toWString( linkPattern.cap( 1 ) );
   return wstring();
 }
 
@@ -764,6 +769,8 @@ private:
 
   virtual void replyHandled( QNetworkReply const * reply, bool textFound );
 
+  bool endsWithPreferableSuffix( wstring const & word ) const;
+
   const wstring preferableSuffix;
 
   struct Replacement
@@ -777,12 +784,8 @@ private:
 
 QNetworkReply const * SuffixAddingArticleRequest::doAddQuery( wstring const & word )
 {
-  if( std::equal( word.end() - static_cast< wstring::difference_type >( preferableSuffix.size() ),
-                  word.end(), preferableSuffix.begin() ) )
-  {
+  if( endsWithPreferableSuffix( word ) )
     return RedirectingArticleRequest::doAddQuery( word );
-  }
-
   // Try the corresponding preferable article first.
   QNetworkReply const * const reply = RedirectingArticleRequest::doAddQuery( word + preferableSuffix );
   Replacement replacement = { reply, word };
@@ -800,6 +803,14 @@ void SuffixAddingArticleRequest::replyHandled( QNetworkReply const * reply, bool
     prependQuery( replacements.front().originalWord );
   }
   replacements.pop();
+}
+
+bool SuffixAddingArticleRequest::endsWithPreferableSuffix( wstring const & word ) const
+{
+  if( word.size() < preferableSuffix.size() )
+    return false;
+  return std::equal( word.end() - static_cast< wstring::difference_type >( preferableSuffix.size() ),
+                     word.end(), preferableSuffix.begin() );
 }
 
 /// Ensures that Wookieepedia era icons are visible at the top of the article.

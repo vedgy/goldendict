@@ -152,9 +152,9 @@ public:
   /// Returns true if there's an audio reference on the page, false otherwise.
   bool hasSound();
 
-  /// Plays the first audio reference on the page, if any.
-  /// Returns false if there is no audio reference on the page, if the referenced
-  /// audio resource doesn't exist or if it failed to download; true otherwise.
+  /// Plays the first valid audio reference on the page, if any.
+  /// Returns false if there is no valid audio reference on the page,
+  /// or if all audio resources failed to download; true otherwise.
   bool playSound();
 
   /// Stops current playback if any.

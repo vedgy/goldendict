@@ -1207,7 +1207,7 @@ bool ArticleView::openLink( QUrl const & url, QUrl const & ref,
                this, SLOT( resourceDownloadFinished() ) );
     }
     else
-    if ( url.scheme() == "gdau" && url.host() == "search" )
+    if ( url.scheme() == "gdau" && Dictionary::ResourceSearch::isSearchHost( url.host() ) )
     {
       // Since searches should be limited to current group, we just do them
       // here ourselves since otherwise we'd need to pass group id to netmgr
@@ -1275,6 +1275,7 @@ bool ArticleView::openLink( QUrl const & url, QUrl const & ref,
                   10000, QPixmap( ":/icons/error.png" ) );
           }
         }
+        const Dictionary::ResourceSearch::Type resourceSearchType = Dictionary::ResourceSearch::hostType( url.host() );
         for( unsigned x = 0; x < activeDicts->size(); ++x )
         {
           try
@@ -1282,8 +1283,12 @@ bool ArticleView::openLink( QUrl const & url, QUrl const & ref,
             if( x == preferred )
               continue;
 
+            Dictionary::Class * const dict = (*activeDicts)[ x ].get();
+            if( dict->getResourceSearchType() != resourceSearchType )
+              continue;
+
             sptr< Dictionary::DataRequest > req =
-              (*activeDicts)[ x ]->getResource(
+              dict->getResource(
                 url.path().mid( 1 ).toUtf8().data() );
 
             resourceDownloadRequests.push_back( req );
@@ -1346,7 +1351,9 @@ bool ArticleView::openLink( QUrl const & url, QUrl const & ref,
 
     if ( resourceDownloadRequests.empty() ) // No requests were queued
     {
-      QMessageBox::critical( this, "GoldenDict", tr( "The referenced resource doesn't exist." ) );
+      emit statusBarMessage(
+            tr( "WARNING: %1" ).arg( tr( "The referenced resource doesn't exist." ) ),
+            10000, QPixmap( ":/icons/error.png" ) );
       return false;
     }
     else
@@ -1435,7 +1442,8 @@ ResourceToSaveHandler * ArticleView::saveResource( const QUrl & url, const QUrl 
 
   if( url.scheme() == "bres" || url.scheme() == "gico" || url.scheme() == "gdau" || url.scheme() == "gdvideo" )
   {
-    if ( url.host() == "search" )
+    const Dictionary::ResourceSearch::Type resourceSearchType = Dictionary::ResourceSearch::hostType( url.host() );
+    if ( resourceSearchType != Dictionary::ResourceSearch::NoSearch )
     {
       // Since searches should be limited to current group, we just do them
       // here ourselves since otherwise we'd need to pass group id to netmgr
@@ -1463,7 +1471,11 @@ ResourceToSaveHandler * ArticleView::saveResource( const QUrl & url, const QUrl 
         {
           try
           {
-            req = (*activeDicts)[ x ]->getResource(
+            Dictionary::Class * const dict = (*activeDicts)[ x ].get();
+            if( dict->getResourceSearchType() != resourceSearchType )
+              continue;
+
+            req = dict->getResource(
                     Qt4x5::Url::path( url ).mid( 1 ).toUtf8().data() );
 
             handler->addRequest( req );
@@ -1582,32 +1594,36 @@ void ArticleView::forward()
 
 bool ArticleView::hasSound()
 {
-  QVariant v = ui.definition->page()->mainFrame()->evaluateJavaScript( "gdAudioLinks.first" );
-  if ( v.type() == QVariant::String )
-    return !v.toString().isEmpty();
-  return false;
+  const QVariant jsResult = ui.definition->page()->mainFrame()->evaluateJavaScript( "gdAudioLinks.all" );
+  return !jsResult.toList().isEmpty();
 }
 
 bool ArticleView::playSound()
 {
-  QVariant v;
-  QString soundScript;
+  QSet< QString > visitedLinks;
+  QWebFrame * const frame = ui.definition->page()->mainFrame();
 
-  v = ui.definition->page()->mainFrame()->evaluateJavaScript( "gdAudioLinks[gdAudioLinks.current]" );
-
-  if ( v.type() == QVariant::String )
-    soundScript = v.toString();
-
-  // fallback to the first one
-  if ( soundScript.isEmpty() )
+  QVariant jsResult = frame->evaluateJavaScript( "gdAudioLinks[gdAudioLinks.current]" );
+  QString soundScript = jsResult.toString();
+  if( !soundScript.isEmpty() )
   {
-    v = ui.definition->page()->mainFrame()->evaluateJavaScript( "gdAudioLinks.first" );
-    if ( v.type() == QVariant::String )
-      soundScript = v.toString();
+    if( openLink( QUrl::fromEncoded( soundScript.toUtf8() ), ui.definition->url() ) )
+      return true;
+    visitedLinks.insert( soundScript );
   }
 
-  if ( !soundScript.isEmpty() )
-    return openLink( QUrl::fromEncoded( soundScript.toUtf8() ), ui.definition->url() );
+  jsResult = frame->evaluateJavaScript( "gdAudioLinks.all" );
+  const QList< QVariant > linkList = jsResult.toList();
+  Q_FOREACH( QVariant link, linkList )
+  {
+    soundScript = link.toString();
+    if( soundScript.isEmpty() || visitedLinks.contains( soundScript ) )
+      continue;
+    if( openLink( QUrl::fromEncoded( soundScript.toUtf8() ), ui.definition->url() ) )
+      return true;
+    visitedLinks.insert( soundScript );
+  }
+
   return false;
 }
 

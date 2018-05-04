@@ -24,7 +24,7 @@ using std::wstring;
 
 /// We use different window flags under Windows and X11 due to slight differences
 /// in their behavior on those platforms.
-static Qt::WindowFlags popupWindowFlags =
+static const Qt::WindowFlags defaultUnpinnedWindowFlags =
 
 #if defined (Q_OS_WIN) || ( defined (Q_OS_MAC) && QT_VERSION < QT_VERSION_CHECK( 5, 3, 0 ) )
 Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint
@@ -32,6 +32,25 @@ Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint
 Qt::Popup
 #endif
 ;
+
+#ifdef HAVE_X11
+static bool ownsClipboardMode( QClipboard::Mode mode )
+{
+  const QClipboard & clipboard = *QApplication::clipboard();
+  switch( mode )
+  {
+    case QClipboard::Clipboard:
+      return clipboard.ownsClipboard();
+    case QClipboard::Selection:
+      return clipboard.ownsSelection();
+    case QClipboard::FindBuffer:
+      return clipboard.ownsFindBuffer();
+  }
+
+  gdWarning( "Unknown clipboard mode: %d\n", static_cast< int >( mode ) );
+  return false;
+}
+#endif
 
 ScanPopup::ScanPopup( QWidget * parent,
                       Config::Class & cfg_,
@@ -121,7 +140,9 @@ ScanPopup::ScanPopup( QWidget * parent,
   connect( ui.translateBox->wordList(), SIGNAL( statusBarMessage( QString const &, int, QPixmap const & ) ),
            this, SLOT( showStatusBarMessage( QString const &, int, QPixmap const & ) ) );
 
-  ui.pronounceButton->hide();
+  ui.pronounceButton->setToolTip( pronounceActionTexts.textFor( AudioPlayerInterface::StoppedState ) );
+  audioPlayerUi.reset( new AudioPlayerUi< QToolButton >( *ui.pronounceButton, &QToolButton::setVisible ) );
+  audioPlayerUi->setPlayable( false );
 
   ui.groupList->fill( groups );
   ui.groupList->setCurrentGroup( cfg.lastPopupGroupId );
@@ -177,7 +198,7 @@ ScanPopup::ScanPopup( QWidget * parent,
   else
   {
     dictionaryBar.setMovable( false );
-    setWindowFlags( popupWindowFlags );
+    setWindowFlags( unpinnedWindowFlags() );
   }
 
   connect( &configEvents, SIGNAL( mutedDictionariesChanged() ),
@@ -387,6 +408,27 @@ void ScanPopup::applyWordsZoomLevel()
   ui.groupList->parentWidget()->layout()->activate();
 }
 
+Qt::WindowFlags ScanPopup::unpinnedWindowFlags() const
+{
+#ifdef ENABLE_SPWF_CUSTOMIZATION
+  const Config::ScanPopupWindowFlags spwf = cfg.preferences.scanPopupUnpinnedWindowFlags;
+  Qt::WindowFlags result;
+  if( spwf == Config::SPWF_Popup )
+    result = Qt::Popup;
+  else
+  if( spwf == Config::SPWF_Tool )
+    result = Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint;
+  else
+    return defaultUnpinnedWindowFlags; // Ignore BypassWMHint option.
+
+  if( cfg.preferences.scanPopupUnpinnedBypassWMHint )
+    result |= Qt::X11BypassWindowManagerHint;
+  return result;
+#else
+  return defaultUnpinnedWindowFlags;
+#endif
+}
+
 void ScanPopup::translateWordFromClipboard()
 {
 	return translateWordFromClipboard(QClipboard::Clipboard);
@@ -439,6 +481,18 @@ void ScanPopup::translateWord( QString const & word )
       );
 }
 
+void ScanPopup::setPlaybackState( AudioPlayerInterface::State state )
+{
+  audioPlayerUi->setPlaybackState( state );
+
+  QString const & newToolTip = pronounceActionTexts.textFor( state );
+  // The same state - Stopped - is often set repeatedly.
+  // Unfortunately QWidget::setToolTip() doesn't check for string equality and
+  // always sends a ToolTipChange event. Let us optimize for our use case manually.
+  if( ui.pronounceButton->toolTip() != newToolTip )
+    ui.pronounceButton->setToolTip( newToolTip );
+}
+
 #ifdef HAVE_X11
 void ScanPopup::delayShow()
 {
@@ -451,6 +505,10 @@ void ScanPopup::clipboardChanged( QClipboard::Mode m )
 {
   if ( !isScanningEnabled )
     return;
+#ifdef HAVE_X11
+  if( cfg.preferences.ignoreOwnClipboardChanges && ownsClipboardMode( m ) )
+    return;
+#endif
 
   GD_DPRINTF( "clipboard changed\n" );
 
@@ -584,6 +642,14 @@ void ScanPopup::engagePopup( bool forcePopup, bool giveFocus )
 
     show();
 
+#ifdef ENABLE_SPWF_CUSTOMIZATION
+    // Ensure that the window always has focus on X11 with Qt::Tool flag.
+    // This also often prevents the window from disappearing prematurely with Qt::Popup flag,
+    // especially when combined with Qt::X11BypassWindowManagerHint flag.
+    if ( !ui.pinButton->isChecked() )
+      giveFocus = true;
+#endif
+
     if ( giveFocus )
     {
       activateWindow();
@@ -608,6 +674,15 @@ void ScanPopup::engagePopup( bool forcePopup, bool giveFocus )
     activateWindow();
     raise();
   }
+#ifdef ENABLE_SPWF_CUSTOMIZATION
+  else
+  if ( ( windowFlags() & Qt::Tool ) == Qt::Tool )
+  {
+    // Ensure that the window with Qt::Tool flag always has focus on X11.
+    activateWindow();
+    raise();
+  }
+#endif
 
   if ( ui.pinButton->isChecked() )
        setWindowTitle( tr( "%1 - %2" ).arg( elideInputWord(), "GoldenDict" ) );
@@ -699,7 +774,7 @@ void ScanPopup::translateInputFinished()
 
 void ScanPopup::showTranslationFor( QString const & inputWord )
 {
-  ui.pronounceButton->hide();
+  audioPlayerUi->setPlayable( false );
 
   unsigned groupId = ui.groupList->getCurrentGroup();
   definition->showDefinition( inputWord, groupId );
@@ -906,7 +981,7 @@ void ScanPopup::requestWindowFocus()
   // One of the rare, actually working workarounds for requesting a user keyboard focus on X11,
   // works for Qt::Popup windows, exactly like our Scan Popup (in unpinned state).
   // Modern window managers actively resist to automatically focus pop-up windows.
-#ifdef HAVE_X11
+#if defined HAVE_X11 && QT_VERSION < QT_VERSION_CHECK( 5, 0, 0 )
   if ( !ui.pinButton->isChecked() )
   {
     QMenu m( this );
@@ -948,9 +1023,15 @@ void ScanPopup::prefixMatchFinished()
   }
 }
 
-void ScanPopup::on_pronounceButton_clicked()
+void ScanPopup::on_pronounceButton_clicked( bool checked )
 {
-  definition->playSound();
+  if( checked )
+  {
+    if( !definition->playSound() ) // This pronunciation request failed before reaching the audio player.
+      ui.pronounceButton->setChecked( false ); // This is the only opportunity to fix the checked state.
+  }
+  else
+    definition->stopPlayback();
 }
 
 void ScanPopup::pinButtonClicked( bool checked )
@@ -973,7 +1054,7 @@ void ScanPopup::pinButtonClicked( bool checked )
   {
     ui.onTopButton->setVisible( false );
     dictionaryBar.setMovable( false );
-    setWindowFlags( popupWindowFlags );
+    setWindowFlags( unpinnedWindowFlags() );
 
     mouseEnteredOnce = true;
   }
@@ -1030,7 +1111,7 @@ void ScanPopup::altModePoll()
 
 void ScanPopup::pageLoaded( ArticleView * )
 {
-  ui.pronounceButton->setVisible( definition->hasSound() );
+  audioPlayerUi->setPlayable( definition->hasSound() );
 
   updateBackForwardButtons();
 

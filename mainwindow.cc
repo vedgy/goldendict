@@ -206,13 +206,19 @@ MainWindow::MainWindow( Config::Class & cfg_ ):
   navToolbar->widgetForAction( afterScanPopupSeparator )->setObjectName( "afterScanPopupSeparator" );
 
   // sound
-  navPronounce = navToolbar->addAction( QIcon( ":/icons/playsound_full.png" ), tr( "Pronounce Word (Alt+S)" ) );
+  navPronounce = navToolbar->addAction( QIcon( ":/icons/playsound_full.png" ),
+                                        pronounceActionTexts.textFor( AudioPlayerInterface::StoppedState ) );
   navPronounce->setShortcut( QKeySequence( "Alt+S" ) );
-  navPronounce->setEnabled( false );
+  navPronounce->setCheckable( true );
   navToolbar->widgetForAction( navPronounce )->setObjectName( "soundButton" );
 
-  connect( navPronounce, SIGNAL( triggered() ),
-           this, SLOT( pronounce() ) );
+  connect( navPronounce, SIGNAL( triggered( bool ) ),
+           this, SLOT( onPronounceTriggered( bool ) ) );
+
+  audioPlayerUi.reset( new AudioPlayerUi< QAction >( *navPronounce, &QAction::setEnabled ) );
+  audioPlayerUi->setPlayable( false );
+
+  connectToAudioPlayer();
 
   // zooming
   // named separator (to be able to hide it via CSS)
@@ -590,7 +596,7 @@ MainWindow::MainWindow( Config::Class & cfg_ ):
 
   if ( cfg.preferences.enableTrayIcon )
   {
-    trayIcon = new QSystemTrayIcon( QIcon( ":/icons/programicon_old.png" ), this );
+    trayIcon = new QSystemTrayIcon( QIcon::fromTheme("goldendict-tray", QIcon( ":/icons/programicon_old.png" )), this );
     trayIcon->setToolTip( tr( "Loading..." ) );
     trayIcon->show();
   }
@@ -1113,7 +1119,7 @@ void MainWindow::updateTrayIcon()
   if ( !trayIcon && cfg.preferences.enableTrayIcon )
   {
     // Need to show it
-    trayIcon = new QSystemTrayIcon( QIcon( ":/icons/programicon_old.png" ), this );
+    trayIcon = new QSystemTrayIcon( QIcon::fromTheme("goldendict-tray", QIcon( ":/icons/programicon_old.png" )), this );
     trayIcon->setContextMenu( &trayIconMenu );
     trayIcon->show();
 
@@ -1131,10 +1137,9 @@ void MainWindow::updateTrayIcon()
   if ( trayIcon )
   {
     // Update the icon to reflect the scanning mode
-    trayIcon->setIcon( QIcon(
-      enableScanPopup->isChecked() ?
-        ":/icons/programicon_scan.png" :
-        ":/icons/programicon_old.png" ) );
+    trayIcon->setIcon( enableScanPopup->isChecked() ?
+        QIcon::fromTheme("goldendict-scan-tray", QIcon( ":/icons/programicon_scan.png" )) :
+        QIcon::fromTheme("goldendict-tray", QIcon( ":/icons/programicon_old.png" )) );
 
     trayIcon->setToolTip( "GoldenDict" );
   }
@@ -1391,6 +1396,8 @@ void MainWindow::makeScanPopup()
 
   if ( cfg.preferences.enableScanPopup && enableScanPopup->isChecked() )
     scanPopup->enableScanning();
+
+  scanPopup->setPlaybackState( audioPlayerUi->playbackState() );
 
   connect( scanPopup.get(), SIGNAL(editGroupRequested( unsigned ) ),
            this, SLOT(editDictionaries( unsigned )), Qt::QueuedConnection );
@@ -1785,7 +1792,7 @@ void MainWindow::pageLoaded( ArticleView * view )
   updatePronounceAvailability();
 
   if ( cfg.preferences.pronounceOnLoadMain )
-    pronounce( view );
+    view->playSound();
 
   updateFoundInDictsList();
 }
@@ -1845,12 +1852,31 @@ void MainWindow::dictionaryBarToggled( bool )
   applyMutedDictionariesState(); // Visibility change affects searches and results
 }
 
-void MainWindow::pronounce( ArticleView * view )
+void MainWindow::onPronounceTriggered( bool checked )
 {
-  if ( view )
-    view->playSound();
+  ArticleView * const view = getCurrentArticleView();
+  Q_ASSERT( view );
+  if( checked )
+  {
+    if( !view->playSound() ) // This pronunciation request failed before reaching the audio player.
+      navPronounce->setChecked( false ); // This is the only opportunity to fix the checked state.
+  }
   else
-    getCurrentArticleView()->playSound();
+    view->stopPlayback();
+}
+
+void MainWindow::connectToAudioPlayer()
+{
+  connect( audioPlayerFactory.player().data(), SIGNAL( stateChanged( AudioPlayerInterface::State ) ),
+           this, SLOT( onAudioPlayerStateChanged( AudioPlayerInterface::State ) ), Qt::UniqueConnection );
+}
+
+void MainWindow::onAudioPlayerStateChanged( AudioPlayerInterface::State state )
+{
+  audioPlayerUi->setPlaybackState( state );
+  navPronounce->setText( pronounceActionTexts.textFor( state ) );
+  if( scanPopup )
+    scanPopup->setPlaybackState( state );
 }
 
 void MainWindow::showDictsPane( )
@@ -1929,7 +1955,7 @@ void MainWindow::updatePronounceAvailability()
   bool pronounceEnabled = ui.tabWidget->count() > 0 &&
     getCurrentArticleView()->hasSound();
 
-  navPronounce->setEnabled( pronounceEnabled );
+  audioPlayerUi->setPlayable( pronounceEnabled );
 }
 
 void MainWindow::editDictionaries( unsigned editDictionaryGroup )
@@ -2099,6 +2125,7 @@ void MainWindow::editPreferences()
     cfg.preferences = p;
 
     audioPlayerFactory.setPreferences( cfg.preferences );
+    connectToAudioPlayer();
 
     beforeScanPopupSeparator->setVisible( cfg.preferences.enableScanPopup );
     enableScanPopup->setVisible( cfg.preferences.enableScanPopup );
@@ -2110,7 +2137,6 @@ void MainWindow::editPreferences()
     updateTrayIcon();
     applyProxySettings();
     applyWebSettings();
-    makeScanPopup();
 
     ui.tabWidget->setHideSingleTab(cfg.preferences.hideSingleTab);
 
@@ -2684,7 +2710,7 @@ void MainWindow::showTranslationFor( QString const & inWord,
 {
   ArticleView *view = getCurrentArticleView();
 
-  navPronounce->setEnabled( false );
+  audioPlayerUi->setPlayable( false );
 
   unsigned group = inGroup ? inGroup :
                    ( groupInstances.empty() ? 0 :
@@ -2797,7 +2823,7 @@ void MainWindow::showTranslationFor( QString const & inWord,
 {
   ArticleView *view = getCurrentArticleView();
 
-  navPronounce->setEnabled( false );
+  audioPlayerUi->setPlayable( false );
 
   view->showDefinition( inWord, dictIDs, searchRegExp,
                         groupInstances[ groupList->currentIndex() ].id,

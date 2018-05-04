@@ -1389,7 +1389,6 @@ bool ArticleView::openLink( QUrl const & url, QUrl const & ref,
 
           QMessageBox::critical( this, "GoldenDict",
                                  error );
-          return false;
         }
 
         return true;
@@ -1399,7 +1398,7 @@ bool ArticleView::openLink( QUrl const & url, QUrl const & ref,
     // Still here? No such program exists.
     QMessageBox::critical( this, "GoldenDict",
                            tr( "The referenced audio program doesn't exist." ) );
-    return false;
+    return true;
   }
   if ( url.scheme() == "gdtts" )
   {
@@ -1420,16 +1419,18 @@ bool ArticleView::openLink( QUrl const & url, QUrl const & ref,
       {
         SpeechClient * speechClient = new SpeechClient( *i, this );
         connect( speechClient, SIGNAL( finished() ), speechClient, SLOT( deleteLater() ) );
-        return speechClient->tell( text );
+        speechClient->tell( text );
+        break;
       }
     }
 #endif
-    return false;
+    return true;
   }
   if ( isExternalLink( url ) )
   {
     // Use the system handler for the conventional external links
-    return QDesktopServices::openUrl( url );
+    QDesktopServices::openUrl( url );
+    return true;
   }
   return false;
 }
@@ -1602,7 +1603,7 @@ bool ArticleView::hasSound()
   return !jsResult.toList().isEmpty();
 }
 
-void ArticleView::playSound()
+bool ArticleView::playSound()
 {
   QSet< QString > visitedLinks;
   QWebFrame * const frame = ui.definition->page()->mainFrame();
@@ -1612,7 +1613,7 @@ void ArticleView::playSound()
   if( !soundScript.isEmpty() )
   {
     if( openLink( QUrl::fromEncoded( soundScript.toUtf8() ), ui.definition->url() ) )
-      return;
+      return true;
     visitedLinks.insert( soundScript );
   }
 
@@ -1624,9 +1625,16 @@ void ArticleView::playSound()
     if( soundScript.isEmpty() || visitedLinks.contains( soundScript ) )
       continue;
     if( openLink( QUrl::fromEncoded( soundScript.toUtf8() ), ui.definition->url() ) )
-      return;
+      return true;
     visitedLinks.insert( soundScript );
   }
+
+  return false;
+}
+
+void ArticleView::stopPlayback()
+{
+  audioPlayer->stop();
 }
 
 QString ArticleView::toHtml()
@@ -2010,7 +2018,7 @@ bool ArticleView::resourceDownloadFinished()
             if ( !tmp.open() || (size_t) tmp.write( &data.front(), data.size() ) != data.size() )
             {
               QMessageBox::critical( this, "GoldenDict", tr( "Failed to create temporary file." ) );
-              return false;
+              return true;
             }
 
             tmp.setAutoRemove( false );

@@ -5,6 +5,7 @@
 #define __MAINWINDOW_HH_INCLUDED__
 
 #include <QMainWindow>
+#include <QScopedPointer>
 #include <QThread>
 #include <QToolButton>
 #include <QSystemTrayIcon>
@@ -15,6 +16,8 @@
 #include "config.hh"
 #include "dictionary.hh"
 #include "article_netmgr.hh"
+#include "audioplayerinterface.hh"
+#include "audioplayerui.hh"
 #include "audioplayerfactory.hh"
 #include "instances.hh"
 #include "article_maker.hh"
@@ -154,6 +157,11 @@ private:
   QNetworkAccessManager dictNetMgr; // We give dictionaries a separate manager,
                                     // since their requests can be destroyed
                                     // in a separate thread
+
+  // audioPlayerUi and pronounceActionTexts must be destroyed after audioPlayerFactory because
+  // AudioPlayerInterface::stateChanged() may be emitted from its destructor.
+  QScopedPointer< AudioPlayerUi< QAction > > audioPlayerUi;
+  PronounceActionTexts pronounceActionTexts;
   AudioPlayerFactory audioPlayerFactory;
 
   WordList * wordList;
@@ -255,6 +263,8 @@ private:
 
   QString unescapeTabHeader( QString const & header );
 
+  void connectToAudioPlayer();
+
 private slots:
 
   void hotKeyActivated( int );
@@ -330,10 +340,9 @@ private slots:
 
   void dictionaryBarToggled( bool checked );
 
-  /// Pronounces the currently displayed word by playing its first audio
-  /// reference, if it has any.
-  /// If view is 0, the operation is done for the currently open tab.
-  void pronounce( ArticleView * view = 0 );
+  void onPronounceTriggered( bool checked );
+
+  void onAudioPlayerStateChanged( AudioPlayerInterface::State state );
 
   void zoomin();
   void zoomout();

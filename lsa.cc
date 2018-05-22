@@ -181,10 +181,10 @@ public:
   virtual sptr< Dictionary::DataRequest > getArticle( wstring const &,
                                                       vector< wstring > const & alts,
                                                       wstring const & )
-    throw( std::exception );
+    THROW_SPEC( std::exception );
 
   virtual sptr< Dictionary::DataRequest > getResource( string const & name )
-    throw( std::exception );
+    THROW_SPEC( std::exception );
 
 protected:
 
@@ -218,7 +218,7 @@ LsaDictionary::LsaDictionary( string const & id,
 sptr< Dictionary::DataRequest > LsaDictionary::getArticle( wstring const & word,
                                                            vector< wstring > const & alts,
                                                            wstring const & )
-  throw( std::exception )
+  THROW_SPEC( std::exception )
 {
   vector< WordArticleLink > chain = findArticles( word );
 
@@ -396,7 +396,7 @@ __attribute__((packed))
 ;
 
 sptr< Dictionary::DataRequest > LsaDictionary::getResource( string const & name )
-  throw( std::exception )
+  THROW_SPEC( std::exception )
 {
   // See if the name ends in .wav. Remove that extension then
 
@@ -521,7 +521,7 @@ vector< sptr< Dictionary::Class > > makeDictionaries(
                                       vector< string > const & fileNames,
                                       string const & indicesDir,
                                       Dictionary::Initializing & initializing )
-  throw( std::exception )
+  THROW_SPEC( std::exception )
 {
   vector< sptr< Dictionary::Class > > dictionaries;
 

@@ -231,6 +231,11 @@ ScanPopup::ScanPopup( QWidget * parent,
   connect( &focusTranslateLineAction, SIGNAL( triggered() ),
            this, SLOT( focusTranslateLine() ) );
 
+  QAction * const focusArticleViewAction = new QAction( this );
+  focusArticleViewAction->setShortcutContext( Qt::WidgetWithChildrenShortcut );
+  focusArticleViewAction->setShortcut( QKeySequence( "Ctrl+N" ) );
+  addAction( focusArticleViewAction );
+  connect( focusArticleViewAction, SIGNAL( triggered() ), definition, SLOT( focus() ) );
 
   switchExpandModeAction.setShortcuts( QList< QKeySequence >() <<
                                        QKeySequence( Qt::CTRL + Qt::Key_8 ) <<

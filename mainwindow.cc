@@ -3287,7 +3287,7 @@ void MainWindow::on_newTab_triggered()
 
 void MainWindow::setAutostart(bool autostart)
 {
-#ifdef Q_OS_WIN32
+#if defined Q_OS_WIN32
     QSettings reg("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                   QSettings::NativeFormat);
     if (autostart) {
@@ -3299,16 +3299,17 @@ void MainWindow::setAutostart(bool autostart)
         reg.remove(QCoreApplication::applicationName());
     }
     reg.sync();
-#else
-    // this is for KDE
-    QString app_fname = QFileInfo(QCoreApplication::applicationFilePath()).baseName();
-    QString lnk(QDir::homePath()+"/.kde/Autostart/"+app_fname);
-    if (autostart) {
-        QFile f(QCoreApplication::applicationFilePath());
-        f.link(lnk);
-    } else {
-        QFile::remove(lnk);
-    }
+#elif defined HAVE_X11
+  const QString destinationPath = QDir::homePath() + "/.config/autostart/goldendict-owned-by-preferences.desktop";
+  if( autostart == QFile::exists( destinationPath ) )
+    return; // Nothing to do.
+  if( autostart )
+  {
+    const QString sourcePath = Config::getProgramDataDir() + "../applications/goldendict.desktop";
+    QFile::copy( sourcePath, destinationPath );
+  }
+  else
+    QFile::remove( destinationPath );
 #endif
 }
 

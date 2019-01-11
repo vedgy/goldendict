@@ -369,7 +369,7 @@ void ArticleView::showDefinition( QString const & word, unsigned group,
   if( cfg.preferences.ignoreDiacritics )
     Qt4x5::Url::addQueryItem( req, "ignore_diacritics", "1" );
 
-  if ( scrollTo.size() )
+  if( !cfg.preferences.avoidAutoScrolling && !scrollTo.isEmpty() )
     Qt4x5::Url::addQueryItem( req, "scrollto", scrollTo );
 
   Contexts::Iterator pos = contexts.find( "gdanchor" );

@@ -63,7 +63,7 @@
 
 #endif
 
-#ifdef HAVE_X11
+#ifdef X11_MAIN_WINDOW_FOCUS_WORKAROUNDS
 #include <QX11Info>
 #include <X11/Xlib.h>
 #include <fixx11h.h>
@@ -2814,7 +2814,7 @@ void MainWindow::showTranslationFor( QString const & inWord,
   updateBackForwardButtons();
 }
 
-#ifdef HAVE_X11
+#ifdef X11_MAIN_WINDOW_FOCUS_WORKAROUNDS
 void MainWindow::toggleMainWindow( bool onlyShow, bool byIconClick )
 #else
 void MainWindow::toggleMainWindow( bool onlyShow )
@@ -2913,7 +2913,7 @@ void MainWindow::toggleMainWindow( bool onlyShow )
       ftsDlg->show();
 
     focusTranslateLine();
-#ifdef HAVE_X11
+#ifdef X11_MAIN_WINDOW_FOCUS_WORKAROUNDS
     Window wh = 0;
     int rev = 0;
     XGetInputFocus( QX11Info::display(), &wh, &rev );
@@ -3133,7 +3133,7 @@ void MainWindow::trayIconActivated( QSystemTrayIcon::ActivationReason r )
   switch(r) {
     case QSystemTrayIcon::Trigger:
       // Left click toggles the visibility of main window
-#ifdef HAVE_X11
+#ifdef X11_MAIN_WINDOW_FOCUS_WORKAROUNDS
       toggleMainWindow( false, true );
 #else
       toggleMainWindow();

@@ -30,6 +30,7 @@ public:
   ScanPopup( QWidget * parent,
              Config::Class & cfg,
              ArticleNetworkAccessManager &,
+             AudioPlayerPtr const &,
              std::vector< sptr< Dictionary::Class > > const & allDictionaries,
              Instances::Groups const &,
              History & );
@@ -50,6 +51,8 @@ public:
   void translateWord( QString const & word );
 
   void setDictionaryIconSize();
+
+  void saveConfigData();
 
 signals:
 
@@ -105,6 +108,8 @@ public slots:
 
 private:
 
+  Qt::WindowFlags unpinnedWindowFlags() const;
+
   // Translates the word from the clipboard or the clipboard selection
   void translateWordFromClipboard(QClipboard::Mode m);
 
@@ -134,7 +139,7 @@ private:
   DictionaryBar dictionaryBar;
   MainStatusBar * mainStatusBar;
   /// Fonts saved before words zooming is in effect, so it could be reset back.
-  QFont wordListDefaultFont, translateLineDefaultFont;
+  QFont wordListDefaultFont, translateLineDefaultFont, groupListDefaultFont;
 
 #ifdef HAVE_X11
   ScanFlag * scanFlag;

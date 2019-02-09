@@ -12,9 +12,9 @@
 #include <QX11Info>
 #include <X11/Xlibint.h>
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 #undef Bool
-#endif
+#undef min
+#undef max
 
 #endif
 
@@ -26,6 +26,10 @@
 #include "ex.hh"
 #include "qtsingleapplication.h"
 #include "qt4x5.hh"
+
+#ifdef Q_OS_WIN32
+#include "hotkeys.h"
+#endif
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -66,6 +70,10 @@ public:
 
   /// Unregisters everything
   void unregister();
+#ifdef Q_OS_WIN32
+  bool handleViaDLL()
+  { return dllHandler.hDLLHandle != 0; }
+#endif
 
 signals:
 
@@ -94,6 +102,17 @@ private:
 #ifdef Q_OS_WIN32
   virtual bool winEvent ( MSG * message, long * result );
   HWND hwnd;
+
+  struct DLL_HANDLER
+  {
+    HMODULE hDLLHandle;
+    setHookProc setHook;
+    removeHookProc removeHook;
+    setHotkeysProc setHotkeys;
+    clearHotkeysProc clearHotkeys;
+  };
+
+  DLL_HANDLER dllHandler;
 
 #elif defined(Q_OS_MAC)
 
@@ -192,11 +211,28 @@ public:
   {}
 };
 
-class QHotkeyApplication : public QtSingleApplication
+// Intermediate class to avoid misunderstanding of #ifdef's
+// by Qt meta-object compiler
+
+class QIntermediateApplication : public QtSingleApplication
 #if defined( Q_OS_WIN ) && IS_QT_5
-    , public QAbstractNativeEventFilter
+        , public QAbstractNativeEventFilter
 #endif
 {
+public:
+  QIntermediateApplication( int & argc, char ** argv ) :
+    QtSingleApplication( argc, argv )
+  {}
+
+  QIntermediateApplication( QString const & id, int & argc, char ** argv ) :
+    QtSingleApplication( id, argc, argv )
+  {}
+};
+
+class QHotkeyApplication : public QIntermediateApplication
+{
+  Q_OBJECT
+
   friend class HotkeyWrapper;
 
   QList< DataCommitter * > dataCommitters;
@@ -208,8 +244,11 @@ public:
   void addDataCommiter( DataCommitter & );
   void removeDataCommiter( DataCommitter & );
 
+private slots:
   /// This calls all data committers.
-  virtual void commitData( QSessionManager & );
+  void hotkeyAppCommitData( QSessionManager & );
+
+  void hotkeyAppSaveState( QSessionManager & );
 
 protected:
   void registerWrapper(HotkeyWrapper *wrapper);

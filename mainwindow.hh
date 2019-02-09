@@ -15,6 +15,7 @@
 #include "config.hh"
 #include "dictionary.hh"
 #include "article_netmgr.hh"
+#include "audioplayerfactory.hh"
 #include "instances.hh"
 #include "article_maker.hh"
 #include "scanpopup.hh"
@@ -22,7 +23,6 @@
 #include "wordfinder.hh"
 #include "dictionarybar.hh"
 #include "history.hh"
-#include "hotkeywrapper.hh"
 #include "mainstatusbar.hh"
 #include "mruqmenu.hh"
 #include "translatebox.hh"
@@ -31,6 +31,7 @@
 #include "fulltextsearch.hh"
 #include "helpwindow.hh"
 
+#include "hotkeywrapper.hh"
 #ifdef HAVE_X11
 #include <fixx11h.h>
 #endif
@@ -76,6 +77,9 @@ public:
 
   void toggleScanPopup();
 
+  void setZoomFactorImmediately( double factor );
+  void setWordsZoomLevel( int level );
+
   /// Set group for main/popup window
   void setGroupByName( QString const & name, bool main_window );
 
@@ -87,13 +91,13 @@ public slots:
   void headwordReceived( QString const &, QString const & );
   void setExpandMode( bool expand );
   void headwordFromFavorites( QString const &, QString const & );
+  void quitApp();
 
 private:
   void addGlobalAction( QAction * action, const char * slot );
   void addGlobalActionsToDialog( QDialog * dialog );
 
   void commitData();
-  bool commitDataCompleted;
 
   QSystemTrayIcon * trayIcon;
 
@@ -117,7 +121,7 @@ private:
   TranslateBox * translateBox;
 
   /// Fonts saved before words zooming is in effect, so it could be reset back.
-  QFont wordListDefaultFont, translateLineDefaultFont;
+  QFont wordListDefaultFont, translateLineDefaultFont, groupListDefaultFont;
 
   QAction escAction, focusTranslateLineAction, addTabAction, closeCurrentTabAction,
           closeAllTabAction, closeRestTabAction,
@@ -153,6 +157,7 @@ private:
   QNetworkAccessManager dictNetMgr; // We give dictionaries a separate manager,
                                     // since their requests can be destroyed
                                     // in a separate thread
+  AudioPlayerFactory audioPlayerFactory;
 
   WordList * wordList;
   QLineEdit * translateLine;
@@ -234,7 +239,9 @@ private:
   /// Creates hotkeyWrapper and hooks the currently set keys for it
   void installHotKeys();
 
+  void setZoomFactor( double factor );
   void applyZoomFactor();
+  void adjustCurrentZoomFactor();
 
   void mousePressEvent ( QMouseEvent * event );
 
@@ -337,6 +344,8 @@ private slots:
   void zoomout();
   void unzoom();
 
+  void scaleArticlesByCurrentZoomFactor();
+
   void doWordsZoomIn();
   void doWordsZoomOut();
   void doWordsZoomBase();
@@ -391,7 +400,7 @@ private slots:
                            QString const & dictID = QString() );
 
   void showTranslationFor( QString const &, QStringList const & dictIDs,
-                           QRegExp const & searchRegExp );
+                           QRegExp const & searchRegExp, bool ignoreDiacritics );
 
   void showHistoryItem( QString const & );
 

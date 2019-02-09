@@ -61,11 +61,11 @@ public:
   { return 0; }
 
   virtual sptr< WordSearchRequest > prefixMatch( wstring const &,
-                                                 unsigned long maxResults ) throw( std::exception );
+                                                 unsigned long maxResults ) THROW_SPEC( std::exception );
 
   virtual sptr< DataRequest > getArticle( wstring const &, vector< wstring > const & alts,
-                                          wstring const & )
-    throw( std::exception );
+                                          wstring const &, bool )
+    THROW_SPEC( std::exception );
 
   virtual quint32 getLangFrom() const
   { return langId; }
@@ -424,7 +424,8 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
             // audio tag
 #if QT_VERSION >= QT_VERSION_CHECK( 5, 0, 0 )
             QRegularExpression reg1( "<audio\\s.+?</audio>",
-                                     QRegularExpression::CaseInsensitiveOption );
+                                     QRegularExpression::CaseInsensitiveOption
+                                     | QRegularExpression::DotMatchesEverythingOption );
             QRegularExpression reg2( "<source\\s+src=\"([^\"]+)",
                                      QRegularExpression::CaseInsensitiveOption );
             pos = 0;
@@ -479,12 +480,12 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
 #endif
             // audio url
 #if QT_VERSION >= QT_VERSION_CHECK( 5, 0, 0 )
-            articleString.replace( QRegularExpression( "<a\\s+href=\"(//upload\\.wikimedia\\.org/wikipedia/commons/[^\"'&]*\\.ogg)" ),
+            articleString.replace( QRegularExpression( "<a\\s+href=\"(//upload\\.wikimedia\\.org/wikipedia/[^\"'&]*\\.ogg(?:\\.mp3|))\"" ),
 #else
-            articleString.replace( QRegExp( "<a\\s+href=\"(//upload\\.wikimedia\\.org/wikipedia/commons/[^\"'&]*\\.ogg)" ),
+            articleString.replace( QRegExp( "<a\\s+href=\"(//upload\\.wikimedia\\.org/wikipedia/[^\"'&]*\\.ogg(?:\\.mp3|))\"" ),
 #endif
                                    QString::fromStdString( addAudioLink( string( "\"" ) + wikiUrl.scheme().toStdString() + ":\\1\"",
-                                                                         this->dictPtr->getId() ) + "<a href=\"" + wikiUrl.scheme().toStdString() + ":\\1" ) );
+                                                                         this->dictPtr->getId() ) + "<a href=\"" + wikiUrl.scheme().toStdString() + ":\\1\"" ) );
 
             // Add url scheme to image source urls
             articleString.replace( " src=\"//", " src=\"" + wikiUrl.scheme() + "://" );
@@ -537,8 +538,11 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
 #endif
                                    QString( "<a href=\"%1/index.php?title=\\1" ).arg( url ));
 
+            // Add url scheme to other urls like  "//xxx"
+            articleString.replace( " href=\"//", " href=\"" + wikiUrl.scheme() + "://" );
+
             QByteArray articleBody = articleString.toUtf8();
-  
+
             articleBody.prepend( dictPtr->isToLanguageRTL() ? "<div class=\"mwiki\" dir=\"rtl\">" :
                                                               "<div class=\"mwiki\">" );
             articleBody.append( "</div>" );
@@ -575,7 +579,7 @@ void MediaWikiArticleRequest::requestFinished( QNetworkReply * r )
 
 sptr< WordSearchRequest > MediaWikiDictionary::prefixMatch( wstring const & word,
                                                             unsigned long maxResults )
-  throw( std::exception )
+  THROW_SPEC( std::exception )
 {
   (void) maxResults;
   if ( word.size() > 80 )
@@ -590,8 +594,8 @@ sptr< WordSearchRequest > MediaWikiDictionary::prefixMatch( wstring const & word
 
 sptr< DataRequest > MediaWikiDictionary::getArticle( wstring const & word,
                                                      vector< wstring > const & alts,
-                                                     wstring const & )
-  throw( std::exception )
+                                                     wstring const &, bool )
+  THROW_SPEC( std::exception )
 {
   if ( word.size() > 80 )
   {
@@ -609,7 +613,7 @@ vector< sptr< Dictionary::Class > > makeDictionaries(
                                       Dictionary::Initializing &,
                                       Config::MediaWikis const & wikis,
                                       QNetworkAccessManager & mgr )
-  throw( std::exception )
+  THROW_SPEC( std::exception )
 {
   vector< sptr< Dictionary::Class > > result;
 

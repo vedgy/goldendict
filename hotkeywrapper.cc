@@ -9,18 +9,24 @@
 #include <QWidget>
 #include <QMainWindow>
 
-#ifdef Q_OS_WIN32
+#ifdef Q_OS_WIN
 #include "mainwindow.hh"
 #endif
 
 //////////////////////////////////////////////////////////////////////////
 
 QHotkeyApplication::QHotkeyApplication( int & argc, char ** argv ):
-  QtSingleApplication( argc, argv )
+  QIntermediateApplication( argc, argv )
 #ifdef Q_OS_WIN32
 ,  mainWindow( 0 )
 #endif
 {
+  connect( this, SIGNAL( commitDataRequest( QSessionManager& ) ),
+           this, SLOT( hotkeyAppCommitData( QSessionManager& ) ), Qt::DirectConnection );
+
+  connect( this, SIGNAL( saveStateRequest( QSessionManager& ) ),
+           this, SLOT( hotkeyAppSaveState( QSessionManager& ) ), Qt::DirectConnection );
+
 #if defined( Q_OS_WIN ) && IS_QT_5
   installNativeEventFilter( this );
 #endif
@@ -28,11 +34,17 @@ QHotkeyApplication::QHotkeyApplication( int & argc, char ** argv ):
 
 QHotkeyApplication::QHotkeyApplication( QString const & id,
                                         int & argc, char ** argv ):
-  QtSingleApplication( id, argc, argv )
+  QIntermediateApplication( id, argc, argv )
 #ifdef Q_OS_WIN32
 ,  mainWindow( 0 )
 #endif
 {
+  connect( this, SIGNAL( commitDataRequest( QSessionManager& ) ),
+           this, SLOT( hotkeyAppCommitData( QSessionManager& ) ), Qt::DirectConnection );
+
+  connect( this, SIGNAL( saveStateRequest( QSessionManager& ) ),
+           this, SLOT( hotkeyAppSaveState( QSessionManager& ) ), Qt::DirectConnection );
+
 #if defined( Q_OS_WIN ) && IS_QT_5
   installNativeEventFilter( this );
 #endif
@@ -48,10 +60,15 @@ void QHotkeyApplication::removeDataCommiter( DataCommitter & d )
   dataCommitters.removeAll( &d );
 }
 
-void QHotkeyApplication::commitData( QSessionManager & s )
+void QHotkeyApplication::hotkeyAppCommitData( QSessionManager & mgr )
 {
   for( int x = 0; x < dataCommitters.size(); ++x )
-    dataCommitters[ x ]->commitData( s );
+    dataCommitters[ x ]->commitData( mgr );
+}
+
+void QHotkeyApplication::hotkeyAppSaveState(QSessionManager & mgr )
+{
+  mgr.setRestartHint( QSessionManager::RestartNever );
 }
 
 void QHotkeyApplication::registerWrapper(HotkeyWrapper *wrapper)
@@ -90,6 +107,27 @@ HotkeyWrapper::HotkeyWrapper(QObject *parent) : QThread( parent ),
 {
 #ifdef Q_OS_WIN
   hwnd=(HWND)((static_cast<QMainWindow*>(parent))->winId());
+
+  dllHandler.hDLLHandle = LoadLibraryA( "GdHotkeys.dll" );
+  if( dllHandler.hDLLHandle )
+  {
+    dllHandler.setHook = ( setHookProc )GetProcAddress( dllHandler.hDLLHandle, "setHook" );
+    dllHandler.removeHook = ( removeHookProc )GetProcAddress( dllHandler.hDLLHandle, "removeHook" );
+    dllHandler.setHotkeys = ( setHotkeysProc )GetProcAddress( dllHandler.hDLLHandle, "setHotkeys" );
+    dllHandler.clearHotkeys = ( clearHotkeysProc )GetProcAddress( dllHandler.hDLLHandle, "clearHotkeys" );
+
+    if( !dllHandler.setHook || !dllHandler.removeHook || !dllHandler.setHotkeys || !dllHandler.clearHotkeys )
+    {
+      FreeLibrary( dllHandler.hDLLHandle );
+      dllHandler.hDLLHandle = 0;
+    }
+  }
+
+  if( dllHandler.hDLLHandle )
+    gdWarning( "Handle global hotkeys via GdHotkeys.dll" );
+  else
+    gdWarning( "Handle global hotkeys via RegisterHotkey()" );
+
 #else
   init();
 #endif
@@ -99,6 +137,10 @@ HotkeyWrapper::HotkeyWrapper(QObject *parent) : QThread( parent ),
 HotkeyWrapper::~HotkeyWrapper()
 {
   unregister();
+#ifdef Q_OS_WIN32
+  if( dllHandler.hDLLHandle )
+    FreeLibrary( dllHandler.hDLLHandle );
+#endif
 }
 
 void HotkeyWrapper::waitKey2()
@@ -288,6 +330,14 @@ bool HotkeyWrapper::setGlobalKey( int key, int key2,
 
   hotkeys.append( HotkeyStruct( vk, vk2, mod, handle, id ) );
 
+  if( dllHandler.hDLLHandle )
+  {
+    dllHandler.removeHook();
+    dllHandler.setHotkeys( vk, vk2, mod, hotkeys.size() - 1 );
+    dllHandler.setHook( hwnd );
+    return true;
+  }
+
   if (!RegisterHotKey(hwnd, id++, mod, vk))
     return false;
 
@@ -302,6 +352,14 @@ bool HotkeyWrapper::winEvent ( MSG * message, long * result )
   (void) result;
   if (message->message == WM_HOTKEY)
     return checkState( (message->lParam >> 16), (message->lParam & 0xffff) );
+
+  if( message->message == GD_HOTKEY_MESSAGE )
+  {
+    int n = (int)message->wParam;
+    if( n < hotkeys.size() && n >= 0 )
+      emit hotkeyActivated( hotkeys.at( n ).handle );
+    return true;
+  }
 
   return false;
 }
@@ -399,14 +457,22 @@ quint32 HotkeyWrapper::nativeKey(int key)
 
 void HotkeyWrapper::unregister()
 {
-  for (int i = 0; i < hotkeys.count(); i++)
+  if( dllHandler.hDLLHandle )
   {
-    HotkeyStruct const & hk = hotkeys.at( i );
+    dllHandler.removeHook();
+    dllHandler.clearHotkeys();
+  }
+  else
+  {
+    for (int i = 0; i < hotkeys.count(); i++)
+    {
+      HotkeyStruct const & hk = hotkeys.at( i );
 
-    UnregisterHotKey( hwnd, hk.id );
+      UnregisterHotKey( hwnd, hk.id );
 
-    if ( hk.key2 && hk.key2 != hk.key )
-      UnregisterHotKey( hwnd, hk.id+1 );
+      if ( hk.key2 && hk.key2 != hk.key )
+        UnregisterHotKey( hwnd, hk.id+1 );
+    }
   }
 
   (static_cast<QHotkeyApplication*>(qApp))->unregisterWrapper(this);
@@ -419,7 +485,7 @@ bool QHotkeyApplication::nativeEventFilter( const QByteArray & /*eventType*/, vo
 {
   MSG * msg = reinterpret_cast< MSG * >( message );
 
-  if ( msg->message == WM_HOTKEY )
+  if ( msg->message == WM_HOTKEY || msg->message == GD_HOTKEY_MESSAGE )
   {
     for (int i = 0; i < hotkeyWrappers.size(); i++)
     {
@@ -441,7 +507,7 @@ bool QHotkeyApplication::nativeEventFilter( const QByteArray & /*eventType*/, vo
 
 bool QHotkeyApplication::winEventFilter ( MSG * message, long * result )
 {
-  if (message->message == WM_HOTKEY)
+  if (message->message == WM_HOTKEY || message->message == GD_HOTKEY_MESSAGE)
   {
     for (int i = 0; i < hotkeyWrappers.size(); i++)
     {

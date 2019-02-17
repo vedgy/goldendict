@@ -168,7 +168,8 @@ public:
 
   virtual sptr< Dictionary::DataRequest > getArticle( wstring const &,
                                                       vector< wstring > const & alts,
-                                                      wstring const & )
+                                                      wstring const &,
+                                                      bool ignoreDiacritics )
     THROW_SPEC( std::exception );
 
   virtual sptr< Dictionary::DataRequest > getResource( string const & name )
@@ -464,6 +465,7 @@ class XdxfArticleRequest: public Dictionary::DataRequest
   wstring word;
   vector< wstring > alts;
   XdxfDictionary & dict;
+  bool ignoreDiacritics;
 
   QAtomicInt isCancelled;
   QSemaphore hasExited;
@@ -472,8 +474,8 @@ public:
 
   XdxfArticleRequest( wstring const & word_,
                      vector< wstring > const & alts_,
-                     XdxfDictionary & dict_ ):
-    word( word_ ), alts( alts_ ), dict( dict_ )
+                     XdxfDictionary & dict_, bool ignoreDiacritics_ ):
+    word( word_ ), alts( alts_ ), dict( dict_ ), ignoreDiacritics( ignoreDiacritics_ )
   {
     QThreadPool::globalInstance()->start(
       new XdxfArticleRequestRunnable( *this, hasExited ) );
@@ -506,13 +508,13 @@ void XdxfArticleRequest::run()
     return;
   }
 
-  vector< WordArticleLink > chain = dict.findArticles( word );
+  vector< WordArticleLink > chain = dict.findArticles( word, ignoreDiacritics );
 
   for( unsigned x = 0; x < alts.size(); ++x )
   {
     /// Make an additional query for each alt
 
-    vector< WordArticleLink > altChain = dict.findArticles( alts[ x ] );
+    vector< WordArticleLink > altChain = dict.findArticles( alts[ x ], ignoreDiacritics );
 
     chain.insert( chain.end(), altChain.begin(), altChain.end() );
   }
@@ -524,6 +526,8 @@ void XdxfArticleRequest::run()
                                     // by only allowing them to appear once.
 
   wstring wordCaseFolded = Folding::applySimpleCaseOnly( word );
+  if( ignoreDiacritics )
+    wordCaseFolded = Folding::applyDiacriticsOnly( wordCaseFolded );
 
   for( unsigned x = 0; x < chain.size(); ++x )
   {
@@ -553,6 +557,8 @@ void XdxfArticleRequest::run()
 
       wstring headwordStripped =
         Folding::applySimpleCaseOnly( Utf8::decode( headword ) );
+      if( ignoreDiacritics )
+        headwordStripped = Folding::applyDiacriticsOnly( headwordStripped );
 
       multimap< wstring, pair< string, string > > & mapToUse =
         ( wordCaseFolded == headwordStripped ) ?
@@ -617,10 +623,11 @@ void XdxfArticleRequest::run()
 
 sptr< Dictionary::DataRequest > XdxfDictionary::getArticle( wstring const & word,
                                                             vector< wstring > const & alts,
-                                                            wstring const & )
+                                                            wstring const &,
+                                                            bool ignoreDiacritics )
   THROW_SPEC( std::exception )
 {
-  return new XdxfArticleRequest( word, alts, *this );
+  return new XdxfArticleRequest( word, alts, *this, ignoreDiacritics );
 }
 
 void XdxfDictionary::loadArticle( uint32_t address,

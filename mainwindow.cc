@@ -3385,7 +3385,7 @@ static void filterAndCollectResources( QString & html, QRegExp & rx, const QStri
 
     if ( resourceIncluded.insert( hash.result() ).second )
     {
-      // Gather resouce information (url, filename) to be download later
+      // Gather resource information (url, filename) to be download later
       downloadResources.push_back( pair<QUrl, QString>( url, folder + host + resourcePath ) );
     }
 
@@ -4233,6 +4233,11 @@ void MainWindow::editDictionary( Dictionary::Class * dict )
   {
     QString command( cfg.editDictionaryCommandLine );
     command.replace( "%GDDICT%", "\"" + dictFilename + "\"" );
+    if( command.contains( "%GDWORD%" ) )
+    {
+      QString headword = unescapeTabHeader( ui.tabWidget->tabText( ui.tabWidget->currentIndex() ) );
+      command.replace( "%GDWORD%", headword );
+    }
     if( !QProcess::startDetached( command ) )
       QApplication::beep();
   }

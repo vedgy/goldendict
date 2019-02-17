@@ -206,7 +206,7 @@ protected:
   vector< char > data;
 };
 
-/// A helper class for syncronous word search implementations.
+/// A helper class for synchronous word search implementations.
 class WordSearchRequestInstant: public WordSearchRequest
 {
 public:
@@ -224,7 +224,7 @@ public:
   { uncertain = value; }
 };
 
-/// A helper class for syncronous data read implementations.
+/// A helper class for synchronous data read implementations.
 class DataRequestInstant: public DataRequest
 {
 public:
@@ -391,7 +391,7 @@ public:
   /// up alongside with it. Transliteration dictionaries implement this. The
   /// default implementation returns an empty list. Note that this function is
   /// supposed to be very fast and simple, and the results are thus returned
-  /// syncronously.
+  /// synchronously.
   virtual vector< wstring > getAlternateWritings( wstring const & )
     throw();
   
@@ -404,7 +404,8 @@ public:
   /// 'Websites' feature.
   virtual sptr< DataRequest > getArticle( wstring const &,
                                           vector< wstring > const & alts,
-                                          wstring const & context = wstring() )
+                                          wstring const & context = wstring(),
+                                          bool ignoreDiacritics = false )
     THROW_SPEC( std::exception )=0;
 
   /// Loads contents of a resource named 'name' into the 'data' vector. This is

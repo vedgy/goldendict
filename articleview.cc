@@ -26,6 +26,11 @@
 #include <QWebElementCollection>
 #endif
 
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 0, 0 )
+#include <QRegularExpression>
+#include "wildcard.hh"
+#endif
+
 #include "qt4x5.hh"
 
 #include <assert.h>
@@ -361,6 +366,8 @@ void ArticleView::showDefinition( QString const & word, unsigned group,
   req.setHost( "localhost" );
   Qt4x5::Url::addQueryItem( req, "word", word );
   Qt4x5::Url::addQueryItem( req, "group", QString::number( group ) );
+  if( cfg.preferences.ignoreDiacritics )
+    Qt4x5::Url::addQueryItem( req, "ignore_diacritics", "1" );
 
   if ( scrollTo.size() )
     Qt4x5::Url::addQueryItem( req, "scrollto", scrollTo );
@@ -1847,7 +1854,7 @@ void ArticleView::contextMenuRequested( QPoint const & pos )
                   allDictionaries[ x ]->getIcon(),
                   QString::fromUtf8( allDictionaries[ x ]->getName().c_str() ),
                   &menu );
-          // Force icons in menu on all platfroms,
+          // Force icons in menu on all platforms,
           // since without them it will be much harder
           // to find things.
           action->setIconVisibleInMenu( true );
@@ -2481,6 +2488,24 @@ void ArticleView::highlightFTSResults()
   else
     regString = regString.remove( AccentMarkHandler::accentMark() );
 
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 0, 0 )
+  QRegularExpression regexp;
+  if( Qt4x5::Url::hasQueryItem( url, "wildcards" ) )
+    regexp.setPattern( wildcardsToRegexp( regString ) );
+  else
+    regexp.setPattern( regString );
+
+  QRegularExpression::PatternOptions patternOptions = QRegularExpression::DotMatchesEverythingOption
+                                                      | QRegularExpression::UseUnicodePropertiesOption
+                                                      | QRegularExpression::MultilineOption
+                                                      | QRegularExpression::InvertedGreedinessOption;
+  if( !Qt4x5::Url::hasQueryItem( url, "matchcase" ) )
+    patternOptions |= QRegularExpression::CaseInsensitiveOption;
+  regexp.setPatternOptions( patternOptions );
+
+  if( regexp.pattern().isEmpty() || !regexp.isValid() )
+    return;
+#else
   QRegExp regexp( regString,
                   Qt4x5::Url::hasQueryItem( url, "matchcase" ) ? Qt::CaseSensitive : Qt::CaseInsensitive,
                   Qt4x5::Url::hasQueryItem( url, "wildcards" ) ? QRegExp::WildcardUnix : QRegExp::RegExp2 );
@@ -2490,6 +2515,7 @@ void ArticleView::highlightFTSResults()
     return;
 
   regexp.setMinimal( true );
+#endif
 
   sptr< AccentMarkHandler > marksHandler = ignoreDiacritics ?
                                            new DiacriticsHandler : new AccentMarkHandler;
@@ -2504,6 +2530,31 @@ void ArticleView::highlightFTSResults()
   QString pageText = ui.definition->page()->currentFrame()->toPlainText();
   marksHandler->setText( pageText );
 
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 0, 0 )
+  QRegularExpressionMatchIterator it = regexp.globalMatch( marksHandler->normalizedText() );
+  while( it.hasNext() )
+  {
+    QRegularExpressionMatch match = it.next();
+
+    // Mirror pos and matched length to original string
+    int pos = match.capturedStart();
+    int spos = marksHandler->mirrorPosition( pos );
+    int matched = marksHandler->mirrorPosition( pos + match.capturedLength() ) - spos;
+
+    // Add mark pos (if presented)
+    while( spos + matched < pageText.length()
+           && pageText[ spos + matched ].category() == QChar::Mark_NonSpacing )
+      matched++;
+
+    if( matched > FTS::MaxMatchLengthForHighlightResults )
+    {
+      gdWarning( "ArticleView::highlightFTSResults(): Too long match - skipped (matched length %i, allowed %i)",
+                 match.capturedLength(), FTS::MaxMatchLengthForHighlightResults );
+    }
+    else
+      allMatches.append( pageText.mid( spos, matched ) );
+  }
+#else
   int pos = 0;
 
   while( pos >= 0 )
@@ -2531,6 +2582,7 @@ void ArticleView::highlightFTSResults()
       pos += regexp.matchedLength();
     }
   }
+#endif
 
   ftsSearchMatchCase = Qt4x5::Url::hasQueryItem( url, "matchcase" );
 

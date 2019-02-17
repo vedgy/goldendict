@@ -93,8 +93,8 @@ win32 {
         } else {
           LIBS += -l$$HUNSPELL_LIB
         }
+        QMAKE_CXXFLAGS += -Wextra -Wempty-body
     }
-    QMAKE_CXXFLAGS += -Wextra -Wempty-body
 
     LIBS += -liconv \
         -lwsock32 \
@@ -366,7 +366,8 @@ HEADERS += folding.hh \
     gls.hh \
     splitfile.hh \
     favoritespanewidget.hh \
-    cpp_features.hh
+    cpp_features.hh \
+    treeview.hh
 
 FORMS += groups.ui \
     dictgroupwidget.ui \
@@ -496,7 +497,8 @@ SOURCES += folding.cc \
     ripemd.cc \
     gls.cc \
     splitfile.cc \
-    favoritespanewidget.cc
+    favoritespanewidget.cc \
+    treeview.cc
 
 win32 {
     FORMS   += texttospeechsource.ui

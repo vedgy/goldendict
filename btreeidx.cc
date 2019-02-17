@@ -797,7 +797,7 @@ char const * BtreeIndex::findChainOffsetExactOrPrefix( wstring const & target,
         if ( wcharBuffer.size() <= wordSize )
           wcharBuffer.resize( wordSize + 1 );
   
-        //DPRINTF( "checking agaist word %s, left = %u\n", ptr, leafEntries );
+        //DPRINTF( "checking against word %s, left = %u\n", ptr, leafEntries );
   
         long result = Utf8::decode( ptr, wordSize, &wcharBuffer.front() );
   
@@ -914,6 +914,8 @@ void BtreeIndex::antialias( wstring const & str,
                             bool ignoreDiacritics )
 {
   wstring caseFolded = Folding::applySimpleCaseOnly( gd::normalize( str ) );
+  if( ignoreDiacritics )
+    caseFolded = Folding::applyDiacriticsOnly( caseFolded );
 
   for( unsigned x = chain.size(); x--; )
   {

@@ -374,7 +374,6 @@ FORMS += groups.ui \
     mainwindow.ui \
     sources.ui \
     initializing.ui \
-    groupselectorwidget.ui \
     scanpopup.ui \
     articleview.ui \
     preferences.ui \
@@ -517,7 +516,8 @@ win32 {
                sapi.hh \
                sphelper.hh \
                speechclient.hh \
-               speechhlp.hh
+               speechhlp.hh \
+               hotkeys.h
 }
 
 mac {

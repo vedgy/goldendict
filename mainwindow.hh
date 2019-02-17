@@ -26,7 +26,6 @@
 #include "wordfinder.hh"
 #include "dictionarybar.hh"
 #include "history.hh"
-#include "hotkeywrapper.hh"
 #include "mainstatusbar.hh"
 #include "mruqmenu.hh"
 #include "translatebox.hh"
@@ -35,6 +34,7 @@
 #include "fulltextsearch.hh"
 #include "helpwindow.hh"
 
+#include "hotkeywrapper.hh"
 #ifdef HAVE_X11
 #include <fixx11h.h>
 #endif
@@ -121,7 +121,7 @@ private:
   TranslateBox * translateBox;
 
   /// Fonts saved before words zooming is in effect, so it could be reset back.
-  QFont wordListDefaultFont, translateLineDefaultFont;
+  QFont wordListDefaultFont, translateLineDefaultFont, groupListDefaultFont;
 
   QAction escAction, focusTranslateLineAction, addTabAction, closeCurrentTabAction,
           closeAllTabAction, closeRestTabAction,

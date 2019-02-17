@@ -260,6 +260,7 @@ struct Preferences
   bool autoStart;
   bool doubleClickTranslates;
   bool selectWordBySingleClick;
+  bool avoidAutoScrolling;
   bool escKeyHidesMainWindow;
   bool alwaysOnTop;
 

@@ -147,7 +147,7 @@ private:
   QScopedPointer< AudioPlayerUi< QToolButton > > audioPlayerUi;
   PronounceActionTexts pronounceActionTexts;
   /// Fonts saved before words zooming is in effect, so it could be reset back.
-  QFont wordListDefaultFont, translateLineDefaultFont;
+  QFont wordListDefaultFont, translateLineDefaultFont, groupListDefaultFont;
 
 #ifdef HAVE_X11
   ScanFlag * scanFlag;

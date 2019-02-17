@@ -163,6 +163,7 @@ Preferences::Preferences( QWidget * parent, Config::Class & cfg_ ):
   ui.cbAutostart->setChecked( p.autoStart );
   ui.doubleClickTranslates->setChecked( p.doubleClickTranslates );
   ui.selectBySingleClick->setChecked( p.selectWordBySingleClick);
+  ui.avoidAutoScrolling->setChecked( p.avoidAutoScrolling );
   ui.escKeyHidesMainWindow->setChecked( p.escKeyHidesMainWindow );
 
   ui.enableMainWindowHotkey->setChecked( p.enableMainWindowHotkey );
@@ -373,6 +374,7 @@ Config::Preferences Preferences::getPreferences()
   p.autoStart = ui.cbAutostart->isChecked();
   p.doubleClickTranslates = ui.doubleClickTranslates->isChecked();
   p.selectWordBySingleClick = ui.selectBySingleClick->isChecked();
+  p.avoidAutoScrolling = ui.avoidAutoScrolling->isChecked();
   p.escKeyHidesMainWindow = ui.escKeyHidesMainWindow->isChecked();
 
   p.enableMainWindowHotkey = ui.enableMainWindowHotkey->isChecked();

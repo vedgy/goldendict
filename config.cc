@@ -152,6 +152,7 @@ Preferences::Preferences():
   autoStart( false ),
   doubleClickTranslates( true ),
   selectWordBySingleClick( false ),
+  avoidAutoScrolling( false ),
   escKeyHidesMainWindow( false ),
   alwaysOnTop ( false ),
   searchInDock ( false ),
@@ -800,6 +801,9 @@ Class load() THROW_SPEC( exError )
 
     if ( !preferences.namedItem( "selectWordBySingleClick" ).isNull() )
       c.preferences.selectWordBySingleClick = ( preferences.namedItem( "selectWordBySingleClick" ).toElement().text() == "1" );
+
+    if ( !preferences.namedItem( "avoidAutoScrolling" ).isNull() )
+      c.preferences.avoidAutoScrolling = ( preferences.namedItem( "avoidAutoScrolling" ).toElement().text() == "1" );
 
     if ( !preferences.namedItem( "escKeyHidesMainWindow" ).isNull() )
       c.preferences.escKeyHidesMainWindow = ( preferences.namedItem( "escKeyHidesMainWindow" ).toElement().text() == "1" );
@@ -1648,6 +1652,10 @@ void save( Class const & c ) THROW_SPEC( exError )
 
     opt = dd.createElement( "selectWordBySingleClick" );
     opt.appendChild( dd.createTextNode( c.preferences.selectWordBySingleClick ? "1":"0" ) );
+    preferences.appendChild( opt );
+
+    opt = dd.createElement( "avoidAutoScrolling" );
+    opt.appendChild( dd.createTextNode( c.preferences.avoidAutoScrolling ? "1":"0" ) );
     preferences.appendChild( opt );
 
     opt = dd.createElement( "escKeyHidesMainWindow" );

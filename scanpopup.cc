@@ -33,6 +33,17 @@ Qt::Popup
 #endif
 ;
 
+static const Qt::WindowFlags pinnedWindowFlags =
+#ifdef HAVE_X11
+/// With the Qt::Dialog flag, scan popup is always on top of the main window
+/// on Linux/X11 with Qt 4, Qt 5 since version 5.12.1 (QTBUG-74309).
+/// Qt::Window allows to use the scan popup and the main window independently.
+Qt::Window
+#else
+Qt::Dialog
+#endif
+;
+
 #ifdef HAVE_X11
 static bool ownsClipboardMode( QClipboard::Mode mode )
 {
@@ -115,9 +126,7 @@ ScanPopup::ScanPopup( QWidget * parent,
 
   wordListDefaultFont = ui.translateBox->wordList()->font();
   translateLineDefaultFont = ui.translateBox->font();
-
-  applyZoomFactor();
-  applyWordsZoomLevel();
+  groupListDefaultFont = ui.groupList->font();
 
   ui.mainLayout->addWidget( definition );
 
@@ -190,7 +199,7 @@ ScanPopup::ScanPopup( QWidget * parent,
   if ( cfg.pinPopupWindow )
   {
     dictionaryBar.setMovable( true );
-    Qt::WindowFlags flags = Qt::Dialog;
+    Qt::WindowFlags flags = pinnedWindowFlags;
     if( cfg.popupWindowAlwaysOnTop )
       flags |= Qt::WindowStaysOnTopHint;
     setWindowFlags( flags );
@@ -231,6 +240,11 @@ ScanPopup::ScanPopup( QWidget * parent,
   connect( &focusTranslateLineAction, SIGNAL( triggered() ),
            this, SLOT( focusTranslateLine() ) );
 
+  QAction * const focusArticleViewAction = new QAction( this );
+  focusArticleViewAction->setShortcutContext( Qt::WidgetWithChildrenShortcut );
+  focusArticleViewAction->setShortcut( QKeySequence( "Ctrl+N" ) );
+  addAction( focusArticleViewAction );
+  connect( focusArticleViewAction, SIGNAL( triggered() ), definition, SLOT( focus() ) );
 
   switchExpandModeAction.setShortcuts( QList< QKeySequence >() <<
                                        QKeySequence( Qt::CTRL + Qt::Key_8 ) <<
@@ -327,6 +341,9 @@ ScanPopup::ScanPopup( QWidget * parent,
   connect( &delayTimer, SIGNAL( timeout() ),
     this, SLOT( delayShow() ) );
 #endif
+
+  applyZoomFactor();
+  applyWordsZoomLevel();
 }
 
 ScanPopup::~ScanPopup()
@@ -403,9 +420,31 @@ void ScanPopup::applyWordsZoomLevel()
   if ( ui.translateBox->translateLine()->font().pointSize() != ps )
     ui.translateBox->translateLine()->setFont( font );
 
-  ui.groupList->setFont(font);
+  font = groupListDefaultFont;
+  ps = font.pointSize();
 
-  ui.groupList->parentWidget()->layout()->activate();
+  if ( cfg.preferences.wordsZoomLevel != 0 )
+  {
+    ps += cfg.preferences.wordsZoomLevel;
+    if ( ps < 1 )
+      ps = 1;
+    font.setPointSize( ps );
+  }
+
+  if ( ui.groupList->font().pointSize() != ps )
+  {
+    disconnect( ui.groupList, SIGNAL( currentIndexChanged( QString const & ) ),
+                this, SLOT( currentGroupChanged( QString const & ) ) );
+    int n = ui.groupList->currentIndex();
+    ui.groupList->clear();
+    ui.groupList->setFont( font );
+    ui.groupList->fill( groups );
+    ui.groupList->setCurrentIndex( n );
+    connect( ui.groupList, SIGNAL( currentIndexChanged( QString const & ) ),
+             this, SLOT( currentGroupChanged( QString const & ) ) );
+  }
+
+  ui.outerFrame->layout()->activate();
 }
 
 Qt::WindowFlags ScanPopup::unpinnedWindowFlags() const
@@ -833,15 +872,29 @@ void ScanPopup::typingEvent( QString const & t )
 
 bool ScanPopup::eventFilter( QObject * watched, QEvent * event )
 {
-  if ( event->type() == QEvent::FocusIn && watched == ui.translateBox->translateLine() )
+  if ( watched == ui.translateBox->translateLine() )
   {
-    QFocusEvent * focusEvent = static_cast< QFocusEvent * >( event );
+    if ( event->type() == QEvent::FocusIn )
+    {
+      QFocusEvent * focusEvent = static_cast< QFocusEvent * >( event );
 
-    // select all on mouse click
-    if ( focusEvent->reason() == Qt::MouseFocusReason ) {
-      QTimer::singleShot(0, this, SLOT(focusTranslateLine()));
+      // select all on mouse click
+      if ( focusEvent->reason() == Qt::MouseFocusReason ) {
+        QTimer::singleShot(0, this, SLOT(focusTranslateLine()));
+      }
+      return false;
     }
-    return false;
+
+    if ( event->type() == QEvent::Resize )
+    {
+      // The UI looks ugly when group combobox is higher than translate line.
+      // Make the height of the combobox the same as the line edit's height.
+      // The fonts of these UI items should be kept in sync by applyWordsZoomLevel()
+      // so that text in the combobox is not clipped.
+      const QResizeEvent * const resizeEvent = static_cast< const QResizeEvent * >( event );
+      ui.groupList->setFixedHeight( resizeEvent->size().height() );
+      return false;
+    }
   }
 
   if ( mouseIntercepted )
@@ -1041,7 +1094,7 @@ void ScanPopup::pinButtonClicked( bool checked )
     uninterceptMouse();
 
     ui.onTopButton->setVisible( true );
-    Qt::WindowFlags flags = Qt::Dialog;
+    Qt::WindowFlags flags = pinnedWindowFlags;
     if( ui.onTopButton->isChecked() )
       flags |= Qt::WindowStaysOnTopHint;
     setWindowFlags( flags );

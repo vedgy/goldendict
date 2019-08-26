@@ -93,6 +93,7 @@ win32 {
         } else {
           LIBS += -l$$HUNSPELL_LIB
         }
+        QMAKE_CXXFLAGS += -Wextra -Wempty-body
     }
 
     LIBS += -liconv \
@@ -183,9 +184,15 @@ unix:!mac {
     desktops.path = $$PREFIX/share/applications
     desktops.files = redist/*.desktop
     INSTALLS += desktops
+    appdata.path = $$PREFIX/share/metainfo
+    appdata.files = redist/*.appdata.xml
+    INSTALLS += appdata
     helps.path = $$PREFIX/share/goldendict/help/
     helps.files = help/*.qch
     INSTALLS += helps
+}
+freebsd {
+    LIBS += -liconv -lexecinfo
 }
 mac {
     TARGET = GoldenDict
@@ -359,14 +366,15 @@ HEADERS += folding.hh \
     ripemd.hh \
     gls.hh \
     splitfile.hh \
-    favoritespanewidget.hh
+    favoritespanewidget.hh \
+    cpp_features.hh \
+    treeview.hh
 
 FORMS += groups.ui \
     dictgroupwidget.ui \
     mainwindow.ui \
     sources.ui \
     initializing.ui \
-    groupselectorwidget.ui \
     scanpopup.ui \
     articleview.ui \
     preferences.ui \
@@ -489,7 +497,8 @@ SOURCES += folding.cc \
     ripemd.cc \
     gls.cc \
     splitfile.cc \
-    favoritespanewidget.cc
+    favoritespanewidget.cc \
+    treeview.cc
 
 win32 {
     FORMS   += texttospeechsource.ui
@@ -508,7 +517,8 @@ win32 {
                sapi.hh \
                sphelper.hh \
                speechclient.hh \
-               speechhlp.hh
+               speechhlp.hh \
+               hotkeys.h
 }
 
 mac {

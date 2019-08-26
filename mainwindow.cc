@@ -146,8 +146,6 @@ MainWindow::MainWindow( Config::Class & cfg_ ):
   Epwing::initialize();
 #endif
 
-  applyQtStyleSheet( cfg.preferences.displayStyle, cfg.preferences.addonStyle );
-
   ui.setupUi( this );
 
   articleMaker.setCollapseParameters( cfg.preferences.collapseBigArticles, cfg.preferences.articleSizeLimit );
@@ -593,8 +591,11 @@ MainWindow::MainWindow( Config::Class & cfg_ ):
   connect( ui.menuHistory, SIGNAL( aboutToShow() ),
            this, SLOT( updateHistoryMenu() ) );
 
+#if !defined( HAVE_X11 ) || QT_VERSION < QT_VERSION_CHECK( 5, 0, 0 )
   // Show tray icon early so the user would be happy. It won't be functional
   // though until the program inits fully.
+  // Do not create dummy tray icon in X. Cause QT5 failed to upgrade systemtray context menu.
+  // And as result menu for some DEs apppear to be empty, for example in MATE DE.
 
   if ( cfg.preferences.enableTrayIcon )
   {
@@ -602,6 +603,7 @@ MainWindow::MainWindow( Config::Class & cfg_ ):
     trayIcon->setToolTip( tr( "Loading..." ) );
     trayIcon->show();
   }
+#endif
 
   connect( navBack, SIGNAL( triggered() ),
            this, SLOT( backClicked() ) );
@@ -795,6 +797,10 @@ MainWindow::MainWindow( Config::Class & cfg_ ):
 
   translateLine->setFocus();
 
+  applyQtStyleSheet( cfg.preferences.displayStyle, cfg.preferences.addonStyle );
+
+  makeScanPopup();
+
   if ( trayIcon )
   {
     // Upgrade existing dummy tray icon into a full-functional one
@@ -886,6 +892,11 @@ void MainWindow::updateSearchPaneAndBar( bool searchInDock )
 {
   QString text = translateLine->text();
 
+  if( ftsDlg )
+    removeGroupComboBoxActionsFromDialog( ftsDlg, groupList );
+  if( headwordsDlg )
+    removeGroupComboBoxActionsFromDialog( headwordsDlg, groupList );
+
   if ( searchInDock )
   {
     cfg.preferences.searchInDock = true;
@@ -923,6 +934,11 @@ void MainWindow::updateSearchPaneAndBar( bool searchInDock )
 
     translateBoxToolBarAction->setVisible( true );
   }
+
+  if( ftsDlg )
+    addGroupComboBoxActionsToDialog( ftsDlg, groupList );
+  if( headwordsDlg )
+    addGroupComboBoxActionsToDialog( headwordsDlg, groupList );
 
   translateLine->setToolTip( tr( "String to search in dictionaries. The wildcards '*', '?' and sets of symbols '[...]' are allowed.\nTo find '*', '?', '[', ']' symbols use '\\*', '\\?', '\\[', '\\]' respectively" ) );
 
@@ -987,7 +1003,7 @@ MainWindow::~MainWindow()
 #if QT_VERSION >= QT_VERSION_CHECK(4, 6, 0)
   ui.centralWidget->ungrabGesture( Gestures::GDPinchGestureType );
   ui.centralWidget->ungrabGesture( Gestures::GDSwipeGestureType );
-  Gestures::unregisterRecognizers();
+//  Gestures::unregisterRecognizers();
 #endif
 
   // Close all tabs -- they should be destroyed before network managers
@@ -1026,6 +1042,18 @@ void MainWindow::addGlobalActionsToDialog( QDialog * dialog )
   dialog->addAction( &focusHeadwordsDlgAction );
   dialog->addAction( &focusArticleViewAction );
   dialog->addAction( ui.fullTextSearchAction );
+}
+
+void MainWindow::addGroupComboBoxActionsToDialog( QDialog * dialog, GroupComboBox * pGroupComboBox )
+{
+  dialog->addActions( pGroupComboBox->getExternActions() );
+}
+
+void MainWindow::removeGroupComboBoxActionsFromDialog( QDialog * dialog, GroupComboBox * pGroupComboBox )
+{
+  QList< QAction * > actions = pGroupComboBox->getExternActions();
+  for( QList< QAction * >::iterator it = actions.begin(); it != actions.end(); ++it )
+    dialog->removeAction( *it );
 }
 
 void MainWindow::commitData( QSessionManager & )
@@ -1256,7 +1284,8 @@ void MainWindow::applyWebSettings()
 
 void MainWindow::makeDictionaries()
 {
-  scanPopup.reset();
+  Q_ASSERT( !scanPopup && "Scan popup must not exist while dictionaries are initialized. "
+                          "It does not support dictionaries changes and must be constructed anew." );
 
   wordFinder.clear();
 
@@ -1278,7 +1307,6 @@ void MainWindow::makeDictionaries()
 
   updateStatusLine();
   updateGroupList();
-  makeScanPopup();
 }
 
 void MainWindow::updateStatusLine()
@@ -2857,7 +2885,7 @@ void MainWindow::toggleMainWindow( bool onlyShow )
     show();
 
 #ifdef Q_OS_WIN32
-    if( hotkeyWrapper->handleViaDLL() )
+    if( !!( hotkeyWrapper ) && hotkeyWrapper->handleViaDLL() )
     {
       // Some dances with tambourine
       HWND wId = (HWND) winId();
@@ -2894,7 +2922,7 @@ void MainWindow::toggleMainWindow( bool onlyShow )
   {
     qApp->setActiveWindow( this );
 #ifdef Q_OS_WIN32
-    if( hotkeyWrapper->handleViaDLL() )
+    if( !!( hotkeyWrapper ) && hotkeyWrapper->handleViaDLL() )
     {
       // Some dances with tambourine
       HWND wId = (HWND) winId();
@@ -4307,10 +4335,11 @@ void MainWindow::showDictionaryHeadwords( QWidget * owner, Dictionary::Class * d
   {
     headwordsDlg = new DictHeadwords( this, cfg, dict );
     addGlobalActionsToDialog( headwordsDlg );
+    addGroupComboBoxActionsToDialog( headwordsDlg, groupList );
     connect( headwordsDlg, SIGNAL( headwordSelected( QString, QString ) ),
              this, SLOT( headwordReceived( QString, QString ) ) );
     connect( headwordsDlg, SIGNAL( closeDialog() ),
-             this, SLOT( closeHeadwordsDialog() ) );
+             this, SLOT( closeHeadwordsDialog() ), Qt::QueuedConnection );
   }
   else
     headwordsDlg->setup( dict );
@@ -4567,6 +4596,7 @@ void MainWindow::showFullTextSearchDialog()
   {
     ftsDlg = new FTS::FullTextSearchDialog( this, cfg, dictionaries, groupInstances, ftsIndexing );
     addGlobalActionsToDialog( ftsDlg );
+    addGroupComboBoxActionsToDialog( ftsDlg, groupList );
 
     connect( ftsDlg, SIGNAL( showTranslationFor( QString, QStringList, QRegExp, bool ) ),
              this, SLOT( showTranslationFor( QString, QStringList, QRegExp, bool ) ) );

@@ -749,13 +749,14 @@ MainWindow::MainWindow( Config::Class & cfg_ ):
   }
   else
 #endif
+#ifndef Q_OS_MAC
   {
     if ( cfg.mainWindowGeometry.size() )
       restoreGeometry( cfg.mainWindowGeometry );
     if ( cfg.mainWindowState.size() )
       restoreState( cfg.mainWindowState, 1 );
   }
-
+#endif
   updateSearchPaneAndBar( cfg.preferences.searchInDock );
   ui.searchPane->setVisible( cfg.preferences.searchInDock );
 
@@ -774,6 +775,15 @@ MainWindow::MainWindow( Config::Class & cfg_ ):
 //  historyChanged();
 
   setWindowTitle( "GoldenDict" );
+
+#ifdef Q_OS_MAC
+  {
+    if ( cfg.mainWindowGeometry.size() )
+      restoreGeometry( cfg.mainWindowGeometry );
+    if ( cfg.mainWindowState.size() )
+      restoreState( cfg.mainWindowState, 1 );
+  }
+#endif
 
   blockUpdateWindowTitle = true;
   addNewTab();
@@ -1736,7 +1746,10 @@ void MainWindow::ctrlReleased()
 {
     if (tabListMenu->actions().size() > 1)
     {
-	ui.tabWidget->setCurrentIndex(tabListMenu->activeAction()->data().toInt());
+        QAction *act = tabListMenu->activeAction();
+        if( act == 0 )
+          act = tabListMenu->actions().at( 1 );
+        ui.tabWidget->setCurrentIndex( act->data().toInt() );
     }
     tabListMenu->hide();
 }

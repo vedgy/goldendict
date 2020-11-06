@@ -572,7 +572,7 @@ void ScanPopup::mouseHovered( QString const & str, bool forcePopup )
 
 void ScanPopup::handleInputWord( QString const & str, bool forcePopup )
 {
-  QString sanitizedStr = gd::toQString( Folding::trimWhitespaceOrPunct( gd::toWString( str ) ) );
+  QString sanitizedStr = gd::toQString( Folding::trimWhitespaceOrPunct( gd::toWString( str ) ) ).simplified();
 
   if ( isVisible() && sanitizedStr == inputWord )
   {

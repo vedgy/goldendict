@@ -564,7 +564,6 @@ void MediaWikiArticleRequest::processArticle( QString & articleString ) const
                                   "<a href=\"" + wikiUrl.scheme().toStdString() + "://\\1\"><img src=\"qrcx://localhost/icons/playsound.png\" border=\"0\" alt=\"Play\"></a>" ) );
   // In those strings, change any underscores to spaces
 #if QT_VERSION >= QT_VERSION_CHECK( 5, 0, 0 )
-  pos = 0;
   QRegularExpression rxLink( "<a\\s+href=\"[^/:\">#]+" );
   it = rxLink.globalMatch( articleString );
   while( it.hasNext() )

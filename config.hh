@@ -303,6 +303,8 @@ struct Preferences
   bool disallowContentFromOtherSites;
   bool enableWebPlugins;
   bool hideGoldenDictHeader;
+  int maxNetworkCacheSize;
+  bool clearNetworkCacheOnExit;
 
   qreal zoomFactor;
   qreal helpZoomFactor;
@@ -319,6 +321,10 @@ struct Preferences
 
   bool collapseBigArticles;
   int articleSizeLimit;
+
+  bool limitInputPhraseLength;
+  int inputPhraseLengthLimit;
+  QString sanitizeInputPhrase( QString const & inputPhrase ) const;
 
   unsigned short maxDictionaryRefsInContextMenu;
 #ifndef Q_WS_X11
@@ -788,6 +794,12 @@ QString getPortableVersionMorphoDir() throw();
 
 /// Returns the add-on styles directory.
 QString getStylesDir() throw();
+
+/// Returns the directory where user-specific non-essential (cached) data should be written.
+QString getCacheDir() throw();
+
+/// Returns the article network disk cache directory.
+QString getNetworkCacheDir() throw();
 
 }
 

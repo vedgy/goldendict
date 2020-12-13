@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
-<TS version="2.1" language="tr_TR">
+<TS version="2.0" language="tr_TR">
 <context>
     <name>About</name>
     <message>
@@ -989,11 +989,11 @@ arasındaki farkı giderir)</translation>
     <name>GroupSelectorWidget</name>
     <message>
         <source>Form</source>
-        <translation type="vanished">Form</translation>
+        <translation type="obsolete">Form</translation>
     </message>
     <message>
         <source>Look in</source>
-        <translation type="vanished">Ara</translation>
+        <translation type="obsolete">Ara</translation>
     </message>
 </context>
 <context>
@@ -3429,11 +3429,11 @@ from Stardict, Babylon and GLS dictionaries</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Do not show popup when selection or clipboard in one of Goldendict&apos;s own windows changes</source>
+        <source>Do not show popup when selection or clipboard in one of GoldenDict&apos;s own windows changes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Ignore Goldendict&apos;s own selection and clipboard changes</source>
+        <source>Ignore GoldenDict&apos;s own selection and clipboard changes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -3470,6 +3470,46 @@ from Stardict, Babylon and GLS dictionaries</source>
     </message>
     <message>
         <source>Ignore diacritics while searching</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Turn this option on to ignore unreasonably long input text
+from mouse-over, selection, clipboard or command line</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ignore input phrases longer than</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Input phrases longer than this size will be ignored</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Maximum network cache size:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Maximum disk space occupied by GoldenDict&apos;s network cache in
+%1
+If set to 0 the network disk cache will be disabled.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source> MiB</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>When this option is enabled, GoldenDict
+clears its network cache from disk during exit.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Clear network cache on exit</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source> MB</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

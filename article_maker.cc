@@ -7,6 +7,7 @@
 #include "utf8.hh"
 #include "wstring_qt.hh"
 #include <limits.h>
+#include <QDebug>
 #include <QFile>
 #include <QUrl>
 #include <QTextDocumentFragment>
@@ -479,6 +480,57 @@ ArticleRequest::ArticleRequest(
 ,   needExpandOptionalParts( needExpandOptionalParts_ )
 ,   ignoreDiacritics( ignoreDiacritics_ )
 {
+  const QChar dataSeparator = '\0';
+  const int sep1 = word_.indexOf( dataSeparator );
+  if ( sep1 != -1 )
+  {
+    const int sep2 = word_.lastIndexOf( dataSeparator );
+    Q_ASSERT( sep2 != -1 );
+
+    const int firstIndex = sep1 + 1;
+    const int lastIndex = sep2 + 1;
+
+    const int firstCharCount = lastIndex - firstIndex - 1;
+    Q_ASSERT( firstCharCount > 0 );
+
+    bool ok;
+    const int first = word_.mid( firstIndex, firstCharCount ).toInt( &ok );
+    Q_ASSERT( ok );
+    const int last = word_.mid( lastIndex ).toInt( &ok );
+    Q_ASSERT( ok );
+
+    word.truncate( sep1 );
+
+    QDebug log = qCritical();
+    log << "ArticleRequest()" << word << first << last;
+
+    if ( first != 0 )
+      alts.insert( gd::toWString( word.mid( first ) ) );
+    if ( last != word.size() )
+      alts.insert( gd::toWString( word.left( last ) ) );
+    if ( first != 0 && last != word.size() )
+      alts.insert( gd::toWString( word.mid( first, last - first ) ) );
+    Q_ASSERT( !alts.empty() );
+
+#define PRIMARY_WORD_NO_PUNCT 1
+
+#if PRIMARY_WORD_NO_PUNCT
+    std::set< gd::wstring >::iterator shortest = alts.begin(), it = shortest;
+    for ( ++it; it != alts.end(); ++it )
+      if ( it->size() < shortest->size() )
+        shortest = it;
+    gd::wstring noPunct = *shortest;
+
+    alts.erase( shortest );
+    alts.insert( gd::toWString( word ) );
+    word = gd::toQString( noPunct );
+#endif
+
+    log << word;
+    for ( std::set< gd::wstring >::iterator it = alts.begin(); it != alts.end(); ++it )
+      log << gd::toQString( *it );
+  }
+
   // No need to lock dataMutex on construction
 
   hasAnyData = true;

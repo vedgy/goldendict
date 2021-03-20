@@ -712,7 +712,8 @@ void ScanPopup::engagePopup( bool forcePopup, bool giveFocus )
 
   /// Too large strings make window expand which is probably not what user
   /// wants
-  ui.translateBox->setText( inputWord, false );
+  const QChar dataSeparator = '\0';
+  ui.translateBox->setText( inputWord.section( dataSeparator, 0, 0 ), false );
 
   showTranslationFor( inputWord );
 }

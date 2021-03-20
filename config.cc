@@ -4,6 +4,7 @@
 #include "config.hh"
 #include "folding.hh"
 #include "wstring_qt.hh"
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QtXml>
@@ -161,7 +162,24 @@ QString Preferences::sanitizeInputPhrase( QString const & inputPhrase ) const
                inputPhrase.size(), inputPhraseLengthLimit );
     return QString();
   }
-  return gd::toQString( Folding::trimWhitespaceOrPunct( gd::toWString( inputPhrase ) ) ).simplified();
+  QString withPunct = inputPhrase.simplified();
+  const QString noPunct = gd::toQString( Folding::trimWhitespaceOrPunct( gd::toWString( inputPhrase ) ) );
+  QDebug log = qCritical();
+  log << "sanitizeInputPhrase:" << withPunct << noPunct;
+  if ( !noPunct.isEmpty() && noPunct != withPunct )
+  {
+    const int first = withPunct.indexOf( noPunct.at(0) );
+    const int last = first + noPunct.size();
+    log << first << last;
+    Q_ASSERT( last - 1 == withPunct.lastIndexOf( noPunct.at( noPunct.size() - 1 ) ) );
+
+    const QChar dataSeparator = '\0';
+    withPunct += dataSeparator;
+    withPunct += QString::number( first );
+    withPunct += dataSeparator;
+    withPunct += QString::number( last );
+  }
+  return withPunct;
 }
 
 Preferences::Preferences():

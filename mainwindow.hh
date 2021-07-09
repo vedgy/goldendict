@@ -90,6 +90,7 @@ public slots:
 
   void messageFromAnotherInstanceReceived( QString const & );
   void showStatusBarMessage ( QString const &, int, QPixmap const & );
+  void phraseReceived( Config::InputPhrase const & );
   void wordReceived( QString const & );
   void headwordReceived( QString const &, QString const & );
   void setExpandMode( bool expand );
@@ -171,6 +172,7 @@ private:
 
   WordList * wordList;
   QLineEdit * translateLine;
+  QString translateBoxSuffix; ///< A punctuation suffix that corresponds to translateLine's text.
 
   WordFinder wordFinder;
 
@@ -270,6 +272,19 @@ private:
   void showDictionaryHeadwords( QWidget * owner, Dictionary::Class * dict );
 
   QString unescapeTabHeader( QString const & header );
+
+  void respondToTranslationRequest( Config::InputPhrase const & phrase,
+                                    bool checkModifiers, QString const & scrollTo = QString() );
+
+  void updateSuggestionList();
+  void updateSuggestionList( QString const & text );
+
+  enum WildcardPolicy { EscapeWildcards, WildcardsAreAlreadyEscaped };
+  enum TranslateBoxPopup { NoPopupChange, EnablePopup, DisablePopup };
+  void setTranslateBoxTextAndKeepSuffix( QString text, WildcardPolicy wildcardPolicy,
+                                         TranslateBoxPopup popupAction );
+  void setTranslateBoxTextAndClearSuffix( QString const & text, WildcardPolicy wildcardPolicy,
+                                          TranslateBoxPopup popupAction );
 
   void connectToAudioPlayer();
 
@@ -373,7 +388,7 @@ private slots:
 
   void currentGroupChanged( QString const & );
   void translateInputChanged( QString const & );
-  void translateInputFinished( bool checkModifiers = true, QString const & dictID = QString() );
+  void translateInputFinished( bool checkModifiers = true );
 
   /// Closes any opened search in the article view, and focuses the translateLine/close main window to tray.
   void handleEsc();
@@ -408,8 +423,9 @@ private slots:
 
   void mutedDictionariesChanged();
 
-  void showTranslationFor( QString const &, unsigned inGroup = 0,
-                           QString const & dictID = QString() );
+  void showTranslationFor( Config::InputPhrase const &, unsigned inGroup = 0,
+                           QString const & scrollTo = QString() );
+  void showTranslationFor( QString const & );
 
   void showTranslationFor( QString const &, QStringList const & dictIDs,
                            QRegExp const & searchRegExp, bool ignoreDiacritics );

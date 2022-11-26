@@ -31,8 +31,8 @@ std::string makeAudioLinkScript( std::string const & url)
     escaped = ( ch == '\\' );
   }
 
-  // Assign the first audio link of each article to gdJustLoadedAudioLink JavaScript variable.
-  // Once an article finishes loading, the value of gdJustLoadedAudioLink is stored away
-  // and the variable is set to null, before the next article starts loading.
-  return "gdJustLoadedAudioLink = gdJustLoadedAudioLink || " + ref + ';';
+  // Append all audio links within each article to gdJustLoadedAudioLinks JavaScript array.
+  // Once an article finishes loading, the value of gdJustLoadedAudioLinks is stored away
+  // and the array is cleared, before the next article starts loading.
+  return "gdJustLoadedAudioLinks.push(" + ref + ");";
 }

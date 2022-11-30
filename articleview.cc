@@ -28,6 +28,8 @@
 #include <QWebHitTestResult>
 #else
 #include <QColor>
+#include <QJsonArray>
+#include <QJsonValue>
 #include <QWebChannel>
 #include <QWebEngineContextMenuData>
 #include <QWebEngineFindTextResult>
@@ -35,6 +37,8 @@
 #include <QWebEngineScript>
 #include <QWebEngineScriptCollection>
 
+#include <algorithm>
+#include <iterator>
 #include <utility>
 #endif
 
@@ -81,7 +85,7 @@ public slots:
   void onJsActiveArticleChanged( QString const & id )
   { articleView.onJsActiveArticleChanged( id ); }
 #else
-  void onJsPageInitStarted( QStringList const & loadedArticles, QStringList const & loadedAudioLinks,
+  void onJsPageInitStarted( QStringList const & loadedArticles, QJsonArray const & loadedAudioLinks,
                             int activeArticleIndex, bool hasPageInitFinished, QDateTime const & pageTimestamp )
   {
     articleView.onJsPageInitStarted( loadedArticles, loadedAudioLinks,
@@ -101,8 +105,8 @@ public slots:
   { articleView.onJsDoubleClicked( imageUrl ); }
 #endif
 
-  void onJsArticleLoaded( QString const & id, QString const & audioLink, bool isActive )
-  { articleView.onJsArticleLoaded( id, audioLink, isActive ); }
+  void onJsArticleLoaded( QString const & id, QStringList const & audioLinks, bool isActive )
+  { articleView.onJsArticleLoaded( id, audioLinks, isActive ); }
 
   void onJsLocationHashChanged()
   { articleView.onJsLocationHashChanged(); }
@@ -1822,7 +1826,7 @@ bool ArticleView::openLink( QUrl const & url, QUrl const & ref,
                this, SLOT( resourceDownloadFinished() ) );
     }
     else
-    if ( url.scheme() == "gdau" && url.host() == "search" )
+    if ( url.scheme() == "gdau" && Dictionary::ResourceSearch::isSearchHost( url.host() ) )
     {
       // Since searches should be limited to current group, we just do them
       // here ourselves since otherwise we'd need to pass group id to netmgr
@@ -1890,6 +1894,7 @@ bool ArticleView::openLink( QUrl const & url, QUrl const & ref,
                   10000, QPixmap( ":/icons/error.png" ) );
           }
         }
+        const Dictionary::ResourceSearch::Type resourceSearchType = Dictionary::ResourceSearch::hostType( url.host() );
         for( unsigned x = 0; x < activeDicts->size(); ++x )
         {
           try
@@ -1897,8 +1902,12 @@ bool ArticleView::openLink( QUrl const & url, QUrl const & ref,
             if( x == preferred )
               continue;
 
+            Dictionary::Class * const dict = (*activeDicts)[ x ].get();
+            if( dict->getResourceSearchType() != resourceSearchType )
+              continue;
+
             sptr< Dictionary::DataRequest > req =
-              (*activeDicts)[ x ]->getResource(
+              dict->getResource(
                 url.path().mid( 1 ).toUtf8().data() );
 
             resourceDownloadRequests.push_back( req );
@@ -1961,7 +1970,9 @@ bool ArticleView::openLink( QUrl const & url, QUrl const & ref,
 
     if ( resourceDownloadRequests.empty() ) // No requests were queued
     {
-      QMessageBox::critical( this, "GoldenDict", tr( "The referenced resource doesn't exist." ) );
+      emit statusBarMessage(
+            tr( "WARNING: %1" ).arg( tr( "The referenced resource doesn't exist." ) ),
+            10000, QPixmap( ":/icons/error.png" ) );
       return false;
     }
     else
@@ -2051,7 +2062,8 @@ void ArticleView::saveResource( QUrl const & url, QUrl const & ref, ResourceToSa
 
   if( url.scheme() == "bres" || url.scheme() == "gico" || url.scheme() == "gdau" || url.scheme() == "gdvideo" )
   {
-    if ( url.host() == "search" )
+    const Dictionary::ResourceSearch::Type resourceSearchType = Dictionary::ResourceSearch::hostType( url.host() );
+    if ( resourceSearchType != Dictionary::ResourceSearch::NoSearch )
     {
       // Since searches should be limited to current group, we just do them
       // here ourselves since otherwise we'd need to pass group id to netmgr
@@ -2115,7 +2127,11 @@ void ArticleView::saveResource( QUrl const & url, QUrl const & ref, ResourceToSa
             if( x == preferred )
               continue;
 
-            req = (*activeDicts)[ x ]->getResource(
+            Dictionary::Class * const dict = (*activeDicts)[ x ].get();
+            if( dict->getResourceSearchType() != resourceSearchType )
+              continue;
+
+            req = dict->getResource(
                     Qt4x5::Url::path( url ).mid( 1 ).toUtf8().data() );
 
             handler->addRequest( req );
@@ -2273,15 +2289,52 @@ void ArticleView::reload()
 
 bool ArticleView::hasSound() const
 {
-  return !firstAudioLink.isEmpty();
+  return !allAudioLinks.empty();
 }
 
 bool ArticleView::playSound()
 {
-  // fallback to the first one
-  QString const soundScript = audioLinks.value( currentArticle, firstAudioLink );
-  if ( !soundScript.isEmpty() )
-    return openLink( QUrl::fromEncoded( soundScript.toUtf8() ), ui.definition->url() );
+  if( !hasSound() )
+    return false; // this is an optimization: nothing can possibly be played
+
+  QSet< QString > brokenAudioLinks;
+
+  // Try to play the current article's audio links first.
+  QString const currentDictionaryId = getActiveArticleId();
+  if( !currentDictionaryId.isEmpty() && playSound( currentDictionaryId, brokenAudioLinks ) )
+    return true;
+
+  // Try all remaining audio links in order.
+  for( QStringList::const_iterator it = articleList.constBegin(); it != articleList.constEnd(); ++it )
+  {
+    QString const & dictionaryId = *it;
+    if( dictionaryId != currentDictionaryId && playSound( dictionaryId, brokenAudioLinks ) )
+      return true;
+  }
+
+  return false;
+}
+
+bool ArticleView::playSound( QString const & dictionaryId, QSet< QString > & brokenAudioLinks )
+{
+  Q_ASSERT( !isScrollTo( dictionaryId ) );
+
+  QHash< QString, QStringList >::const_iterator const dictionaryLinksIt = allAudioLinks.constFind( dictionaryId );
+  if( dictionaryLinksIt == allAudioLinks.constEnd() )
+    return false;
+  QStringList const & audioLinks = dictionaryLinksIt.value();
+  Q_ASSERT( !audioLinks.empty() ); // Invariant: allAudioLinks contains no empty-list values.
+
+  for( QStringList::const_iterator it = audioLinks.constBegin(); it != audioLinks.constEnd(); ++it )
+  {
+    QString const & link = *it;
+    if( brokenAudioLinks.contains( link ) )
+      continue;
+    if( openLink( QUrl::fromEncoded( link.toUtf8() ), ui.definition->url() ) )
+      return true;
+    brokenAudioLinks.insert( link );
+  }
+
   return false;
 }
 
@@ -2868,10 +2921,40 @@ void ArticleView::on_highlightAllButton_clicked()
   performFindOperation( false, false, true );
 }
 
+#ifndef USE_QTWEBKIT
+static QStringList audioLinksFromJson( QJsonValue const & articleAudioLinks )
+{
+  if( !articleAudioLinks.isArray() )
+  {
+    gdWarning( "Article audio links received from JavaScript is not an array. Actual JSON type: %d",
+               static_cast< int >( articleAudioLinks.type() ) );
+    return {};
+  }
+
+  auto const linksJson = articleAudioLinks.toArray();
+  QStringList links;
+  links.reserve( linksJson.size() );
+  std::transform( linksJson.cbegin(), linksJson.cend(), std::back_inserter( links ), []( QJsonValue const & json ) {
+    if( !json.isString() )
+    {
+      gdWarning( "An audio link received from JavaScript is not a string. Actual JSON type: %d",
+                 static_cast< int >( json.type() ) );
+      return QString{};
+    }
+    return json.toString();
+  } );
+
+  // Remove only consecutive duplicates. Nonconsecutive duplicates are rarer and much more expensive to remove.
+  links.erase( std::unique( links.begin(), links.end() ), links.end() );
+
+  return links;
+}
+#endif
+
 #ifdef USE_QTWEBKIT
 void ArticleView::onJsPageInitStarted()
 #else
-void ArticleView::onJsPageInitStarted( QStringList const & loadedArticles, QStringList const & loadedAudioLinks,
+void ArticleView::onJsPageInitStarted( QStringList const & loadedArticles, QJsonArray const & loadedAudioLinks,
                                        int activeArticleIndex, bool hasPageInitFinished,
                                        QDateTime const & pageTimestamp_ )
 #endif
@@ -2880,8 +2963,7 @@ void ArticleView::onJsPageInitStarted( QStringList const & loadedArticles, QStri
   // Clear the data associated with it and prepare to receive the current page's data.
 
   articleList.clear();
-  audioLinks.clear();
-  firstAudioLink.clear();
+  allAudioLinks.clear();
   currentArticle.clear();
 
   emit canGoBackForwardChanged( this );
@@ -2913,7 +2995,10 @@ void ArticleView::onJsPageInitStarted( QStringList const & loadedArticles, QStri
   if( loadedArticles.size() == loadedAudioLinks.size() )
   {
     for( int i = 0; i != loadedArticles.size(); ++i )
-      onJsArticleLoadedNoTimestamps( loadedArticles.at( i ), loadedAudioLinks.at( i ), i == activeArticleIndex );
+    {
+      auto const audioLinks = audioLinksFromJson( loadedAudioLinks.at( i ) );
+      onJsArticleLoadedNoTimestamps( loadedArticles.at( i ), audioLinks, i == activeArticleIndex );
+    }
   }
   else
     gdWarning( "Loaded item list sizes don't match: %d != %d", loadedArticles.size(), loadedAudioLinks.size() );
@@ -2987,7 +3072,7 @@ void ArticleView::onJsDoubleClicked( QString const & imageUrl )
 }
 #endif // USE_QTWEBKIT
 
-void ArticleView::onJsArticleLoaded( QString const & id, QString const & audioLink, bool isActive )
+void ArticleView::onJsArticleLoaded( QString const & id, QStringList const & audioLinks, bool isActive )
 {
 #ifndef USE_QTWEBKIT
   // When JavaScript does not send the current article timestamp, it is implicitly equal to pageTimestamp.
@@ -2997,10 +3082,10 @@ void ArticleView::onJsArticleLoaded( QString const & id, QString const & audioLi
     isActive = false;
 #endif
 
-  onJsArticleLoadedNoTimestamps( id, audioLink, isActive );
+  onJsArticleLoadedNoTimestamps( id, audioLinks, isActive );
 }
 
-void ArticleView::onJsArticleLoadedNoTimestamps( QString const & id, QString const & audioLink, bool isActive )
+void ArticleView::onJsArticleLoadedNoTimestamps( QString const & id, QStringList const & audioLinks, bool isActive )
 {
   if( !isScrollTo( id ) )
   {
@@ -3008,13 +3093,11 @@ void ArticleView::onJsArticleLoadedNoTimestamps( QString const & id, QString con
     return;
   }
 
-  articleList.push_back( dictionaryIdFromScrollTo( id ) );
-  if( !audioLink.isEmpty() )
-  {
-    audioLinks.insert( id, audioLink );
-    if( firstAudioLink.isEmpty() )
-      firstAudioLink = audioLink;
-  }
+  QString const dictionaryId = dictionaryIdFromScrollTo( id );
+  articleList.push_back( dictionaryId );
+  if( !audioLinks.empty() )
+    allAudioLinks.insert( dictionaryId, audioLinks );
+
   if( isActive )
     currentArticle = id;
 

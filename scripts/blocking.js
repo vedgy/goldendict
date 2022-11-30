@@ -9,8 +9,8 @@
 
 var gdWasCurrentArticleSetExplicitly = false;
 
-// This variable is temporary and almost always undefined or null.
-var gdJustLoadedAudioLink;
+// This variable is temporary and almost always empty.
+var gdJustLoadedAudioLinks = [];
 
 function gdSetActiveArticle(articleId) {
     gdWasCurrentArticleSetExplicitly = true;

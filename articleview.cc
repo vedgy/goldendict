@@ -373,13 +373,16 @@ QString selectWordBySingleClickAssignmentScript( bool selectWordBySingleClick )
 
 bool profilePreferencesChanged( Config::Preferences const & oldPreferences, Config::Preferences const & newPreferences )
 {
-  return oldPreferences.selectWordBySingleClick != newPreferences.selectWordBySingleClick;
+  return oldPreferences.autoScrollToTargetArticle != newPreferences.autoScrollToTargetArticle
+      || oldPreferences.selectWordBySingleClick != newPreferences.selectWordBySingleClick;
 }
 
 QString profilePreferencesScriptSourceCode( Config::Preferences const & preferences )
 {
-  return variableDeclarationFromAssignmentScript( selectWordBySingleClickAssignmentScript(
-                                                    preferences.selectWordBySingleClick ) );
+  return QLatin1String( "const gdAutoScrollToTargetArticle = %1;\n" ).arg( javaScriptBool(
+                                                                             preferences.autoScrollToTargetArticle ) )
+      + variableDeclarationFromAssignmentScript( selectWordBySingleClickAssignmentScript(
+                                                   preferences.selectWordBySingleClick ) );
 }
 
 /// QUrl::StripTrailingSlash does not remove a slash if it is the only character in the path.

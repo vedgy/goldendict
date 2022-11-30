@@ -115,8 +115,15 @@ window.addEventListener('pagehide', function(event) {
     // the more complex DOMRegex GitHub Gist referenced in a comment to the second answer won't be needed.
     gdCurrentArticleHash = searchParams.get('gdanchor');
 
-    if (!gdCurrentArticleHash)
-        gdCurrentArticleHash = gdCurrentArticle; // Scroll to the target article if there is no fragment.
+    if (!gdCurrentArticleHash) {
+        if (gdAutoScrollToTargetArticle)
+            gdCurrentArticleHash = gdCurrentArticle; // Scroll to the target article if there is no fragment.
+        else {
+            // Setting current article if we don't scroll to it or to an element within it doesn't
+            // look right => assign null to gdCurrentArticle to make the first article current.
+            gdCurrentArticle = null;
+        }
+    }
 
     if (gdCurrentArticleHash) {
         // Unless location.hash equals '#' and consequently location.href ends with '#', make gdCurrentArticleHash

@@ -71,7 +71,7 @@ class ArticleView: public QFrame
 
   QAction pasteAction, articleUpAction, articleDownAction,
           goBackAction, goForwardAction, selectCurrentArticleAction,
-          copyAsTextAction, inspectAction;
+          copyAsTextAction, jumpToTargetArticleAction, inspectAction;
   QAction & openSearchAction;
   bool searchIsOpened;
   bool expandOptionalParts;
@@ -360,6 +360,8 @@ private slots:
   void linkHovered( QString const & link, QString const & title = QString(),
                     QString const & textContent = QString() );
   void contextMenuRequested( QPoint const & );
+
+  void jumpToTargetArticle();
 
   void resourceDownloadFinished();
 

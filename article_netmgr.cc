@@ -265,9 +265,20 @@ QNetworkReply * ArticleNetworkAccessManager::createRequest( Operation op,
   if( req.url().scheme() == QLatin1String( "qrc" ) )
     return QNetworkAccessManager::createRequest( op, req, outgoingData ); // bypass AllowFrameReply
 
+  QNetworkRequest localReq( req );
+
+  if( localReq.url().scheme() == "gdlookup" && localReq.url().host() == "upload.wikimedia.org" )
+  {
+    // Handle some requests from offline wikipedia/wiktionary without scheme
+
+    QUrl newUrl( req.url() );
+    newUrl.setScheme( "https" );
+    localReq.setUrl( newUrl );
+  }
+
   if ( op == GetOperation )
   {
-    if ( req.url().scheme() == "qrcx" )
+    if ( localReq.url().scheme() == "qrcx" )
     {
       // We had to override the local load policy for the qrc URL scheme until QWebSecurityOrigin::addLocalScheme() was
       // introduced in Qt 4.6. Hence we used a custom qrcx URL scheme and redirected it here back to qrc. Qt versions
@@ -277,30 +288,29 @@ QNetworkReply * ArticleNetworkAccessManager::createRequest( Operation op,
       // qrcx URL scheme. A recent commit "Add support for qrc:// URL scheme" is the first one where the qrc scheme
       // works correctly. So the deprecation has to wait until older GoldenDict versions become rarely used.
 
-      QUrl newUrl( req.url() );
+      QUrl newUrl( localReq.url() );
 
       newUrl.setScheme( "qrc" );
       newUrl.setHost( "" );
 
-      QNetworkRequest newReq( req );
-      newReq.setUrl( newUrl );
+      localReq.setUrl( newUrl );
 
-      return QNetworkAccessManager::createRequest( op, newReq, outgoingData );
+      return QNetworkAccessManager::createRequest( op, localReq, outgoingData );
     }
 
 #ifdef USE_QTWEBKIT
 #if QT_VERSION >= 0x050300 // Qt 5.3+
     // Workaround of same-origin policy
-    if( ( req.url().scheme().startsWith( "http" ) || req.url().scheme() == "ftp" )
-        && req.hasRawHeader( "Referer" ) )
+    if( ( localReq.url().scheme().startsWith( "http" ) || localReq.url().scheme() == "ftp" )
+        && localReq.hasRawHeader( "Referer" ) )
     {
-      QByteArray referer = req.rawHeader( "Referer" );
+      QByteArray referer = localReq.rawHeader( "Referer" );
       QUrl refererUrl = QUrl::fromEncoded( referer );
 
       if( refererUrl.scheme().startsWith( "http") || refererUrl.scheme() == "ftp" )
       {
         // Only for pages from network resources
-        if ( !req.url().host().endsWith( refererUrl.host() ) )
+        if ( !localReq.url().host().endsWith( refererUrl.host() ) )
         {
           QUrl frameUrl;
           frameUrl.setScheme( refererUrl.scheme() );
@@ -311,7 +321,7 @@ QNetworkReply * ArticleNetworkAccessManager::createRequest( Operation op,
           if( !value.origin )
             value.setOrigin( frameUrl );
 
-          QPair< QString, QString > target( req.url().scheme(), req.url().host() );
+          QPair< QString, QString > target( localReq.url().scheme(), localReq.url().host() );
           if( value.hostsToAccess.find( target ) == value.hostsToAccess.end() )
           {
             value.hostsToAccess.insert( target );
@@ -326,11 +336,11 @@ QNetworkReply * ArticleNetworkAccessManager::createRequest( Operation op,
 
     QString contentType;
 
-    sptr< Dictionary::DataRequest > dr = getResource( req.url(), contentType );
+    sptr< Dictionary::DataRequest > dr = getResource( localReq.url(), contentType );
 
     if ( dr.get() )
     {
-      ArticleResourceReply * const reply = new ArticleResourceReply( this, req, dr, contentType );
+      ArticleResourceReply * const reply = new ArticleResourceReply( this, localReq, dr, contentType );
 #ifndef USE_QTWEBKIT
       reply->setStreamingDeviceWorkarounds( streamingDeviceWorkarounds );
 #endif
@@ -341,23 +351,23 @@ QNetworkReply * ArticleNetworkAccessManager::createRequest( Operation op,
   // Check the Referer. If the user has opted-in to block elements from external
   // pages, we block them.
 
-  if ( disallowContentFromOtherSites && req.hasRawHeader( "Referer" ) )
+  if ( disallowContentFromOtherSites && localReq.hasRawHeader( "Referer" ) )
   {
-    QByteArray referer = req.rawHeader( "Referer" );
+    QByteArray referer = localReq.rawHeader( "Referer" );
 
     //DPRINTF( "Referer: %s\n", referer.data() );
 
     QUrl refererUrl = QUrl::fromEncoded( referer );
 
-    //DPRINTF( "Considering %s vs %s\n", getHostBase( req.url() ).toUtf8().data(),
+    //DPRINTF( "Considering %s vs %s\n", getHostBase( localReq.url() ).toUtf8().data(),
     //        getHostBase( refererUrl ).toUtf8().data() );
 
-    if ( !req.url().host().endsWith( refererUrl.host() ) &&
-         getHostBase( req.url() ) != getHostBase( refererUrl ) && !req.url().scheme().startsWith("data") )
+    if ( !localReq.url().host().endsWith( refererUrl.host() ) &&
+         getHostBase( localReq.url() ) != getHostBase( refererUrl ) && !localReq.url().scheme().startsWith("data") )
     {
-      gdWarning( "Blocking element \"%s\"\n", req.url().toEncoded().data() );
+      gdWarning( "Blocking element \"%s\"\n", localReq.url().toEncoded().data() );
 
-      return new BlockedNetworkReply( req, this );
+      return new BlockedNetworkReply( localReq, this );
     }
   }
 
@@ -365,41 +375,39 @@ QNetworkReply * ArticleNetworkAccessManager::createRequest( Operation op,
   // make this code work in the Qt WebEngine version. Currently it does not work because
   // GoldenDict does not install an URL scheme handler for the standard "file" scheme.
   // This looks like an adjustment of a relative path to a dictionary in the portable version.
-  if( req.url().scheme() == "file" )
+  if( localReq.url().scheme() == "file" )
   {
     // Check file presence and adjust path if necessary
-    QString fileName = req.url().toLocalFile();
-    if( req.url().host().isEmpty() && articleMaker.adjustFilePath( fileName ) )
+    QString fileName = localReq.url().toLocalFile();
+    if( localReq.url().host().isEmpty() && articleMaker.adjustFilePath( fileName ) )
     {
-      QUrl newUrl( req.url() );
+      QUrl newUrl( localReq.url() );
       QUrl localUrl = QUrl::fromLocalFile( fileName );
 
       newUrl.setHost( localUrl.host() );
       newUrl.setPath( Qt4x5::Url::ensureLeadingSlash( localUrl.path() ) );
 
-      QNetworkRequest newReq( req );
-      newReq.setUrl( newUrl );
+      localReq.setUrl( newUrl );
 
-      return QNetworkAccessManager::createRequest( op, newReq, outgoingData );
+      return QNetworkAccessManager::createRequest( op, localReq, outgoingData );
     }
 
-    return QNetworkAccessManager::createRequest( op, req, outgoingData ); // bypass AllowFrameReply
+    return QNetworkAccessManager::createRequest( op, localReq, outgoingData ); // bypass AllowFrameReply
   }
 
   QNetworkReply *reply = 0;
 
   // spoof User-Agent
-  if ( hideGoldenDictHeader && req.url().scheme().startsWith("http", Qt::CaseInsensitive))
+  if ( hideGoldenDictHeader && localReq.url().scheme().startsWith("http", Qt::CaseInsensitive))
   {
-    QNetworkRequest newReq( req );
-    newReq.setRawHeader("User-Agent", req.rawHeader("User-Agent").replace(qApp->applicationName(), ""));
-    reply = QNetworkAccessManager::createRequest( op, newReq, outgoingData );
+    localReq.setRawHeader("User-Agent", localReq.rawHeader("User-Agent").replace(qApp->applicationName(), ""));
+    reply = QNetworkAccessManager::createRequest( op, localReq, outgoingData );
   }
 
   if( !reply )
-    reply = QNetworkAccessManager::createRequest( op, req, outgoingData );
+    reply = QNetworkAccessManager::createRequest( op, localReq, outgoingData );
 
-  if( req.url().scheme() == "https")
+  if( localReq.url().scheme() == "https")
   {
 #ifndef QT_NO_OPENSSL
     connect( reply, SIGNAL( sslErrors( QList< QSslError > ) ),
@@ -515,7 +523,7 @@ sptr< Dictionary::DataRequest > ArticleNetworkAccessManager::getResource(
             }
             try
             {
-              return  dictionaries[ x ]->getResource( Qt4x5::Url::path( url ).mid( 1 ).toUtf8().data() );
+              return  dictionaries[ x ]->getResource( Qt4x5::Url::fullPath( url ).mid( 1 ).toUtf8().data() );
             }
             catch( std::exception & e )
             {

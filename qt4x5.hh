@@ -120,6 +120,21 @@ inline void removeQueryItem( QUrl & url, QString const & key )
 #endif
 }
 
+inline QString fullPath( QUrl const & url )
+{
+#if IS_QT_5
+  QString path = url.path( QUrl::FullyDecoded );
+  if( url.hasQuery() )
+  {
+    QUrlQuery urlQuery( url );
+    path += QString::fromLatin1( "?" ) + urlQuery.toString( QUrl::FullyDecoded );
+  }
+  return path;
+#else
+  return url.toString( QUrl::RemoveScheme | QUrl::RemoveAuthority | QUrl::RemoveFragment | QUrl::RemovePort );
+#endif
+}
+
 inline void setQueryItems( QUrl & url, QList< QPair< QString, QString > > const & query )
 {
 #if IS_QT_5

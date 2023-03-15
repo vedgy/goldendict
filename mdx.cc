@@ -1464,6 +1464,7 @@ QString MdxDictionary::getCachedFileName( QString filename )
 
 void CacheFileRunnable::run()
 {
+  QThread::sleep(1);
   QFile f( fullName );
   if( !f.open( QFile::WriteOnly ) )
   {

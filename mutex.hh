@@ -13,11 +13,6 @@
 class Mutex: public QMutex
 {
 public:
-  Mutex() : QMutex( Recursive )
-  {}
-  ~Mutex()
-  {}
-
   /// Locks the given mutex on construction and unlocks on destruction
   class Lock
   {

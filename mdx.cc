@@ -207,6 +207,9 @@ class MdxDictionary: public BtreeIndexing::BtreeDictionary
   string initError;
   QString cacheDirName;
 
+  int cacheFileRunnableCount; ///< The number of CacheFileRunnable objects created by this dictionary.
+  QSemaphore cacheFileRunnablesExited; ///< A semaphore shared by all our CacheFileRunnable objects.
+
 public:
 
   MdxDictionary( string const & id, string const & indexFile, vector<string> const & dictionaryFiles );
@@ -304,7 +307,8 @@ MdxDictionary::MdxDictionary( string const & id, string const & indexFile,
   idx( indexFile, "rb" ),
   idxHeader( idx.read< IdxHeader >() ),
   chunks( idx, idxHeader.chunksOffset ),
-  deferredInitRunnableStarted( false )
+  deferredInitRunnableStarted( false ),
+  cacheFileRunnableCount( 0 )
 {
   // Read the dictionary's name
   idx.seek( sizeof( idxHeader ) );
@@ -350,6 +354,9 @@ MdxDictionary::~MdxDictionary()
   // Wait for init runnable to complete if it was ever started
   if ( deferredInitRunnableStarted )
     deferredInitRunnableExited.acquire();
+
+  if( cacheFileRunnableCount > 0 )
+    cacheFileRunnablesExited.acquire( cacheFileRunnableCount );
 
   dictFile.close();
 
@@ -1361,6 +1368,37 @@ QString & MdxDictionary::filterResource( QString const & articleId, QString & ar
 }
 #endif
 
+namespace {
+
+class CacheFileRunnable: public QRunnable
+{
+  Q_DISABLE_COPY( CacheFileRunnable )
+
+  QString const filename;
+  QString const fullName;
+  string const dictionaryDirPath;
+  vector< sptr< IndexedMdd > > const & mddResources;
+  QSemaphore & hasExited;
+
+public:
+  explicit CacheFileRunnable( QString const & filename_, QString const & fullName_,
+                              string const & firstDictionaryFilename,
+                              vector< sptr< IndexedMdd > > const & mddResources_, QSemaphore & hasExited_ ):
+    filename( filename_ ), fullName( fullName_ ),
+    dictionaryDirPath( FsEncoding::dirname( firstDictionaryFilename ) + FsEncoding::separator() ),
+    mddResources( mddResources_ ), hasExited( hasExited_ )
+  {}
+
+  ~CacheFileRunnable()
+  {
+    hasExited.release();
+  }
+
+  virtual void run();
+};
+
+} // unnamed namespace
+
 QString MdxDictionary::getCachedFileName( QString filename )
 {
   QDir dir;
@@ -1404,83 +1442,15 @@ QString MdxDictionary::getCachedFileName( QString filename )
   if( !info.exists() )
   {
     QFile f( fullName );
+    // Open the cache file synchronously to ensure that a single CacheFileRunnable object per link is created.
     if( f.open( QFile::WriteOnly ) )
     {
-      gd::wstring resourceName = FsEncoding::decode( filename.toStdString() );
-      vector< char > data;
-
-      // In order to prevent recursive internal redirection...
-      set< QByteArray > resourceIncluded;
-
-      for ( ;; )
-      {
-
-        string u8ResourceName = Utf8::encode( resourceName );
-        QCryptographicHash hash( QCryptographicHash::Md5 );
-        hash.addData( u8ResourceName.data(), u8ResourceName.size() );
-        if ( !resourceIncluded.insert( hash.result() ).second )
-          continue;
-
-        // Convert to the Windows separator
-        std::replace( resourceName.begin(), resourceName.end(), '/', '\\' );
-        if ( resourceName[ 0 ] != '\\' )
-        {
-          resourceName.insert( 0, 1, '\\' );
-        }
-
-        try
-        {
-          // local file takes precedence
-          string fn = FsEncoding::dirname( getDictionaryFilenames()[ 0 ] ) +
-                      FsEncoding::separator() + u8ResourceName;
-          File::loadFromFile( fn, data );
-        }
-        catch ( File::exCantOpen & )
-        {
-          for ( vector< sptr< IndexedMdd > >::const_iterator i = mddResources.begin();
-                i != mddResources.end(); ++i )
-          {
-            sptr< IndexedMdd > mddResource = *i;
-            if ( mddResource->loadFile( resourceName, data ) )
-              break;
-          }
-        }
-
-        // Check if this file has a redirection
-        // Always encoded in UTF16-LE
-        // L"@@@LINK="
-        static const char pattern[16] =
-        {
-          '@', '\0', '@', '\0', '@', '\0', 'L', '\0', 'I', '\0', 'N', '\0', 'K', '\0', '=', '\0'
-        };
-
-        if ( data.size() > sizeof( pattern ) )
-        {
-          if ( memcmp( &data.front(),  pattern, sizeof( pattern ) ) == 0 )
-          {
-            data.push_back( '\0' );
-            data.push_back( '\0' );
-            QString target = MdictParser::toUtf16( "UTF-16LE", &data.front() + sizeof( pattern ),
-                                                   data.size() - sizeof( pattern ) );
-            resourceName = gd::toWString( target.trimmed() );
-            continue;
-          }
-        }
-        break;
-      }
-
-      qint64 n = 0;
-      if( !data.empty() )
-        n = f.write( data.data(), data.size() );
-
       f.close();
-
-      if( n < (qint64)data.size() )
-      {
-        gdWarning( "Mdx: file \"%s\" writing error: \"%s\"", fullName.toUtf8().data(),
-                                                             f.errorString().toUtf8().data() );
-        return QString();
-      }
+      // Resolve link overloads and store the file asynchronously in order to
+      // load the main article text faster and to keep idxMutex nonrecursive.
+      QThreadPool::globalInstance()->start( new CacheFileRunnable( filename, fullName, getDictionaryFilenames().front(),
+                                                                   mddResources, cacheFileRunnablesExited ) );
+      ++cacheFileRunnableCount;
     }
     else
     {
@@ -1490,6 +1460,92 @@ QString MdxDictionary::getCachedFileName( QString filename )
     }
   }
   return fullName;
+}
+
+void CacheFileRunnable::run()
+{
+  QFile f( fullName );
+  if( !f.open( QFile::WriteOnly ) )
+  {
+    gdWarning( "Mdx: couldn't open file \"%s\" for writing: \"%s\"", fullName.toUtf8().constData(),
+               f.errorString().toUtf8().constData() );
+    return;
+  }
+
+  gd::wstring resourceName = FsEncoding::decode( filename.toStdString() );
+  vector< char > data;
+
+  // In order to prevent recursive internal redirection...
+  set< QByteArray > resourceIncluded;
+
+  for ( ;; )
+  {
+
+    string u8ResourceName = Utf8::encode( resourceName );
+    QCryptographicHash hash( QCryptographicHash::Md5 );
+    hash.addData( u8ResourceName.data(), u8ResourceName.size() );
+    if ( !resourceIncluded.insert( hash.result() ).second )
+      continue;
+
+    // Convert to the Windows separator
+    std::replace( resourceName.begin(), resourceName.end(), '/', '\\' );
+    if ( resourceName[ 0 ] != '\\' )
+    {
+      resourceName.insert( 0, 1, '\\' );
+    }
+
+    try
+    {
+      // local file takes precedence
+      string fn = dictionaryDirPath + u8ResourceName;
+      File::loadFromFile( fn, data );
+    }
+    catch ( File::exCantOpen & )
+    {
+      for ( vector< sptr< IndexedMdd > >::const_iterator i = mddResources.begin();
+            i != mddResources.end(); ++i )
+      {
+        sptr< IndexedMdd > mddResource = *i;
+        if ( mddResource->loadFile( resourceName, data ) )
+          break;
+      }
+    }
+
+    // Check if this file has a redirection
+    // Always encoded in UTF16-LE
+    // L"@@@LINK="
+    static const char pattern[16] =
+    {
+      '@', '\0', '@', '\0', '@', '\0', 'L', '\0', 'I', '\0', 'N', '\0', 'K', '\0', '=', '\0'
+    };
+
+    if ( data.size() > sizeof( pattern ) )
+    {
+      if ( memcmp( &data.front(),  pattern, sizeof( pattern ) ) == 0 )
+      {
+        data.push_back( '\0' );
+        data.push_back( '\0' );
+        QString target = MdictParser::toUtf16( "UTF-16LE", &data.front() + sizeof( pattern ),
+                                               data.size() - sizeof( pattern ) );
+        resourceName = gd::toWString( target.trimmed() );
+        continue;
+      }
+    }
+    break;
+  }
+
+  qint64 n = 0;
+  if( !data.empty() )
+    n = f.write( data.data(), data.size() );
+
+  f.close();
+
+  if( n < (qint64)data.size() )
+  {
+    gdWarning( "Mdx: file \"%s\" writing error: \"%s\"", fullName.toUtf8().data(),
+                                                         f.errorString().toUtf8().data() );
+    return;
+  }
 }
 
 void MdxDictionary::removeDirectory( QString const & directory )

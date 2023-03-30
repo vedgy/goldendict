@@ -5,9 +5,11 @@
 
 #ifdef USE_QTWEBKIT
 
+#include "articleinspector.hh"
+#include "qt4x5.hh"
+
 #include <QMouseEvent>
 #include <QApplication>
-#include "articleinspector.hh"
 #include <QWebFrame>
 
 #ifdef Q_OS_WIN32
@@ -88,7 +90,7 @@ bool ArticleWebView::event( QEvent * event )
 
 void ArticleWebView::mousePressEvent( QMouseEvent * event )
 {
-  if ( event->buttons() & Qt::MidButton )
+  if ( event->buttons() & Qt4x5::middleButton() )
     midButtonPressed = true;
 
   QWebView::mousePressEvent( event );
@@ -107,7 +109,7 @@ void ArticleWebView::mouseReleaseEvent( QMouseEvent * event )
 
   // QWebPage::linkClicked() signal is emitted during the above call to QWebView::mouseReleaseEvent(),
   // so midButtonPressed has been used already and can be unset now.
-  if( midButtonPressed && !( event->buttons() & Qt::MidButton ) )
+  if( midButtonPressed && !( event->buttons() & Qt4x5::middleButton() ) )
     midButtonPressed = false;
 }
 

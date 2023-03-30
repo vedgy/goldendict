@@ -307,6 +307,8 @@ private:
 
   void connectToAudioPlayer();
 
+  QString tabFavoritesFolder( int tabNom );
+
 private slots:
 
 #ifdef X11_MAIN_WINDOW_FOCUS_WORKAROUNDS

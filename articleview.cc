@@ -32,6 +32,7 @@
 #include <QWebEngineContextMenuData>
 #include <QWebEngineFindTextResult>
 #include <QWebEngineHistory>
+#include <QWebEngineProfile>
 #include <QWebEngineScript>
 #include <QWebEngineScriptCollection>
 
@@ -202,7 +203,7 @@ public:
 
     for( size_t left = baseText.size(); left; )
     {
-      if( *nextChar >= 0x10000U )
+      if( *nextChar >= 0x10000 )
       {
         // Will be translated into surrogate pair
         normText.push_back( *nextChar );
@@ -352,9 +353,9 @@ QString variableDeclarationFromAssignmentScript( QString const & assignmentScrip
   return QLatin1String( "let " ) + assignmentScript;
 }
 
-QString selectWordBySingleClickScriptName()
+QString profilePreferencesScriptName()
 {
-  return QStringLiteral( "SelectWordBySingleClick" );
+  return QStringLiteral( "ProfilePreferences" );
 }
 
 QString selectWordBySingleClickAssignmentScript( bool selectWordBySingleClick )
@@ -362,10 +363,15 @@ QString selectWordBySingleClickAssignmentScript( bool selectWordBySingleClick )
   return QLatin1String( "gdSelectWordBySingleClick = %1;" ).arg( javaScriptBool( selectWordBySingleClick ) );
 }
 
-QWebEngineScript createSelectWordBySingleClickScript()
+bool profilePreferencesChanged( Config::Preferences const & oldPreferences, Config::Preferences const & newPreferences )
 {
-  return createScript( selectWordBySingleClickScriptName(),
-                       variableDeclarationFromAssignmentScript( selectWordBySingleClickAssignmentScript( false ) ) );
+  return oldPreferences.selectWordBySingleClick != newPreferences.selectWordBySingleClick;
+}
+
+QString profilePreferencesScriptSourceCode( Config::Preferences const & preferences )
+{
+  return variableDeclarationFromAssignmentScript( selectWordBySingleClickAssignmentScript(
+                                                    preferences.selectWordBySingleClick ) );
 }
 
 /// QUrl::StripTrailingSlash does not remove a slash if it is the only character in the path.
@@ -545,7 +551,6 @@ ArticleView::ArticleView( QWidget * parent, ArticleNetworkAccessManager & nm,
   webChannel->registerObject( QStringLiteral( "gdArticleView" ), jsProxy );
 
   webPage->scripts().insert( createPageReloadingScript() );
-  webPage->scripts().insert( createSelectWordBySingleClickScript() );
 
   connect( webPage, &QWebEnginePage::findTextFinished, this, &ArticleView::findTextFinished );
 
@@ -842,7 +847,7 @@ static void expandFrames( QWebView & view )
   {
     // There's some sort of glitch -- sometimes you need to move a mouse
 
-    QMouseEvent ev( QEvent::MouseMove, QPoint(), Qt::MouseButton(), 0, 0 );
+    QMouseEvent ev( QEvent::MouseMove, QPoint(), Qt::MouseButton(), Qt::MouseButtons(), Qt::KeyboardModifiers() );
 
     qApp->sendEvent( &view, &ev );
   }
@@ -1226,10 +1231,9 @@ void ArticleView::updateCurrentArticleFromCurrentFrame( QWebFrame * frame )
 #endif // USE_QTWEBKIT
 
 #ifndef USE_QTWEBKIT
-void ArticleView::updateSourceCodeOfInjectedScript( QString const & name, QString const & sourceCode )
+void ArticleView::updateSourceCodeOfInjectedScript( QWebEngineScriptCollection & scripts,
+                                                    QString const & name, QString const & sourceCode )
 {
-  auto & scripts = ui.definition->page()->scripts();
-
   auto script = scripts.findScript( name );
   Q_ASSERT( !script.isNull() );
 
@@ -1240,16 +1244,8 @@ void ArticleView::updateSourceCodeOfInjectedScript( QString const & name, QStrin
 
 void ArticleView::updateInjectedPageReloadingScript( bool scrollToCurrentArticle )
 {
-  updateSourceCodeOfInjectedScript( pageReloadingScriptName(),
+  updateSourceCodeOfInjectedScript( ui.definition->page()->scripts(), pageReloadingScriptName(),
                                     pageReloadingScriptSourceCode( currentArticle, scrollToCurrentArticle ) );
-}
-
-void ArticleView::updateInjectedSelectWordBySingleClickScript( bool selectWordBySingleClick )
-{
-  QString const assignmentScript = selectWordBySingleClickAssignmentScript( selectWordBySingleClick );
-  ui.definition->page()->runJavaScript( assignmentScript );
-  updateSourceCodeOfInjectedScript( selectWordBySingleClickScriptName(),
-                                    variableDeclarationFromAssignmentScript( assignmentScript ) );
 }
 #endif
 
@@ -1380,15 +1376,15 @@ bool ArticleView::eventFilter( QObject * obj, QEvent * ev )
 
         QWidget *child = widget->childAt( widget->mapFromGlobal( pt ) );
         if( child )
-        {
-          QWheelEvent whev( child->mapFromGlobal( pt ), pt, delta, Qt::NoButton, Qt::NoModifier );
-          qApp->sendEvent( child, &whev );
-        }
-        else
-        {
-          QWheelEvent whev( widget->mapFromGlobal( pt ), pt, delta, Qt::NoButton, Qt::NoModifier );
-          qApp->sendEvent( widget, &whev );
-        }
+          widget = child;
+
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 12, 0 )
+        QWheelEvent whev( widget->mapFromGlobal( pt ), pt, QPoint(), QPoint( 0, delta ),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false );
+#else
+        QWheelEvent whev( widget->mapFromGlobal( pt ), pt, delta, Qt::NoButton, Qt::NoModifier );
+#endif
+        qApp->sendEvent( widget, &whev );
       }
     }
 
@@ -2211,6 +2207,24 @@ bool ArticleView::canGoForward() const
   return ui.definition->history()->canGoForward();
 }
 
+#ifndef USE_QTWEBKIT
+void ArticleView::initProfilePreferences( QWebEngineProfile & profile, Config::Preferences const & preferences )
+{
+  Q_ASSERT( profile.scripts()->findScript( profilePreferencesScriptName() ).isNull() );
+  auto const script = createScript( profilePreferencesScriptName(), profilePreferencesScriptSourceCode( preferences ) );
+  profile.scripts()->insert( script );
+}
+
+void ArticleView::updateProfilePreferences( QWebEngineProfile & profile, Config::Preferences const & oldPreferences,
+                                            Config::Preferences const & newPreferences )
+{
+  if( !profilePreferencesChanged( oldPreferences, newPreferences ) )
+    return;
+  updateSourceCodeOfInjectedScript( *profile.scripts(), profilePreferencesScriptName(),
+                                    profilePreferencesScriptSourceCode( newPreferences ) );
+}
+#endif
+
 void ArticleView::setSelectionBySingleClick( bool set )
 {
 #ifdef USE_QTWEBKIT
@@ -2224,7 +2238,7 @@ void ArticleView::setSelectionBySingleClick( bool set )
   else
     lastLeftMouseButtonPressEvent.reset();
 
-  updateInjectedSelectWordBySingleClickScript( set );
+  ui.definition->page()->runJavaScript( selectWordBySingleClickAssignmentScript( set ) );
 #endif
 }
 
@@ -2320,11 +2334,13 @@ Config::InputPhrase ArticleView::getPhrase() const
 
 void ArticleView::print( QPrinter * printer ) const
 {
+#ifdef USE_QTWEBKIT
+  ui.definition->print( printer );
+#else
   // TODO (Qt WebEngine): port this function and its uses to QWebEnginePage::print(). From the documentation:
   // "It is the users responsibility to ensure the printer remains valid until resultCallback has been called." =>
   // consider capturing sptr< QPrinter > MainWindow::printer by value and calling sptr::reset() in the resultCallback.
-#ifdef USE_QTWEBKIT
-  ui.definition->print( printer );
+  Q_UNUSED( printer )
 #endif
 }
 

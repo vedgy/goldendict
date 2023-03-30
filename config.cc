@@ -109,7 +109,7 @@ ProxyServer::ProxyServer(): enabled( false ), useSystemProxy( false ), type( Soc
 {
 }
 
-HotKey::HotKey(): modifiers( 0 ), key1( 0 ), key2( 0 )
+HotKey::HotKey(): modifiers(), key1( 0 ), key2( 0 )
 {
 }
 
@@ -205,7 +205,7 @@ InputPhrase Preferences::sanitizeInputPhrase( QString const & inputPhrase ) cons
     return result;
   }
 
-  const QString withPunct = inputPhrase.simplified();
+  const QString withPunct = inputPhrase.simplified().remove( QChar( 0xAD ) ); // Simplify whitespaces and remove soft hyphens
   result.phrase = gd::toQString( Folding::trimWhitespaceOrPunct( gd::toWString( withPunct ) ) );
   if ( !result.isValid() )
     return result; // The suffix of an invalid input phrase must be empty.

@@ -12,6 +12,10 @@
 #include "gddebug.hh"
 #include "gestures.hh"
 
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 11, 0 )
+#include <QScreen>
+#endif
+
 #ifdef Q_OS_MAC
 #include "macmouseover.hh"
 #define MouseOver MacMouseOver
@@ -190,6 +194,7 @@ ScanPopup::ScanPopup( QWidget * parent,
   connect( &dictionaryBar, SIGNAL( openDictionaryFolder( QString const & ) ),
            this, SIGNAL( openDictionaryFolder( QString const & ) ) );
 
+  pinnedGeometry = cfg.popupWindowGeometry;
   if ( cfg.popupWindowGeometry.size() )
     restoreGeometry( cfg.popupWindowGeometry );
 
@@ -668,7 +673,11 @@ void ScanPopup::engagePopup( bool forcePopup, bool giveFocus )
 
       QPoint currentPos = QCursor::pos();
 
-      QRect desktop = QApplication::desktop()->screenGeometry();
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 11, 0 )
+      QRect const desktop = QGuiApplication::primaryScreen()->geometry();
+#else
+      QRect const desktop = QApplication::desktop()->screenGeometry();
+#endif
 
       QSize windowSize = geometry().size();
 
@@ -697,6 +706,11 @@ void ScanPopup::engagePopup( bool forcePopup, bool giveFocus )
         y = desktop.y() + ( desktop.height() - windowSize.height() ) / 2;
 
       move( x, y );
+    }
+    else
+    {
+      if( pinnedGeometry.size() > 0 )
+        restoreGeometry( pinnedGeometry );
     }
 
     show();
@@ -1095,6 +1109,22 @@ void ScanPopup::showEvent( QShowEvent * ev )
   }
 }
 
+void ScanPopup::closeEvent( QCloseEvent * ev )
+{
+  if( isVisible() && ui.pinButton->isChecked() )
+    pinnedGeometry = saveGeometry();
+
+  QMainWindow::closeEvent( ev );
+}
+
+void ScanPopup::moveEvent( QMoveEvent * ev )
+{
+  if( isVisible() && ui.pinButton->isChecked() )
+    pinnedGeometry = saveGeometry();
+
+  QMainWindow::moveEvent( ev );
+}
+
 void ScanPopup::prefixMatchFinished()
 {
   // Check that there's a window there at all
@@ -1147,6 +1177,9 @@ void ScanPopup::pinButtonClicked( bool checked )
   }
 
   show();
+
+  if( checked )
+    pinnedGeometry = saveGeometry();
 }
 
 void ScanPopup::focusTranslateLine()

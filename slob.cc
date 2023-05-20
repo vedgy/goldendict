@@ -946,8 +946,14 @@ string SlobDictionary::convert( const string & in, RefEntry const & entry )
           || list[ 1 ].compare( "mwe-math-fallback-image-inline" ) == 0
           || list[ 1 ].endsWith( " tex" ) )
       {
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 5, 0 )
+        QString const name = QString::asprintf(
+#else
         QString name;
-        name.sprintf( "%04X%04X%04X.gif", entry.itemIndex, entry.binIndex, texCount );
+        name.sprintf(
+#endif
+               "%04X%04X%04X.gif", entry.itemIndex, entry.binIndex, texCount );
+
         imgName = texCachePath + "/" + name;
 
         if( !QFileInfo( imgName ).exists() )
@@ -1028,9 +1034,8 @@ string SlobDictionary::convert( const string & in, RefEntry const & entry )
               break;
           }
 
-          QString command = texCgiPath + " -e " +  imgName
-                            + " \"" + tex + "\"";
-          QProcess::execute( command );
+          QStringList const arguments = QStringList() << "-e" << imgName << tex;
+          QProcess::execute( texCgiPath, arguments );
         }
 
         QString tag = QString( "<img class=\"imgtex\" src=\"file://" )

@@ -493,7 +493,7 @@ int main( int argc, char ** argv )
         "  --group-name=GROUP\t\tSet current group of dictionaries in the main window to GROUP\n"
         "  --popup-group-name=GROUP\tSet current group of dictionaries in the popup window to GROUP\n"
         "  --zoom-factor=FACTOR\t\tSet the zoom factor for Article View to FACTOR,"
-        " where FACTOR is a real number between 0.1 and 5.0, the default FACTOR is 1.0\n"
+        " where FACTOR is a real number between 0.3 and 5.0, the default FACTOR is 1.0\n"
         "  --words-zoom-level=LEVEL\tSet Search Pane/Box font size to"
         " the default font size plus LEVEL, where LEVEL is an integer (possibly negative)\n"
         "\nIf another GoldenDict instance is running, the second instance exits immediately, the options"

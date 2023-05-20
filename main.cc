@@ -2,6 +2,7 @@
  * Part of GoldenDict. Licensed under GPLv3 or later, see the LICENSE file */
 
 #include <stdio.h>
+#include <limits>
 #include <QIcon>
 #include "gdappstyle.hh"
 #include "article_urlschemehandler.hh"
@@ -34,6 +35,8 @@
 #include <QFile>
 #include <QByteArray>
 #include <QString>
+#include <QTextStream>
+#include <QUrl>
 
 #include "gddebug.hh"
 
@@ -116,17 +119,28 @@ void gdMessageHandler( QtMsgType type, const char *msg_ )
 
 class GDCommandLine
 {
-  bool crashReport, logFile;
-  QString word, groupName, popupGroupName, errFileName;
+  static int invalidWordsZoomLevel() { return std::numeric_limits< int >::max(); }
+  static double invalidZoomFactor() { return std::numeric_limits< double >::max(); }
+
+  bool showHelp, toggleScanPopup, logFile;
+  int wordsZoomLevel;
+  double zoomFactor;
+  QString word, groupName, popupGroupName;
   QVector< QString > arguments;
 public:
   GDCommandLine( int argc, char **argv );
 
-  inline bool needCrashReport()
-  { return crashReport; }
+  bool needShowHelp() const
+  { return showHelp; }
 
-  inline QString errorFileName()
-  { return errFileName; }
+  inline bool needToggleScanPopup()
+  { return toggleScanPopup; }
+
+  bool needSetWordsZoomLevel() const { return wordsZoomLevel != invalidWordsZoomLevel(); }
+  int getWordsZoomLevel() const { return wordsZoomLevel; }
+
+  bool needSetZoomFactor() const { return zoomFactor != invalidZoomFactor(); }
+  double getZoomFactor() const { return zoomFactor; }
 
   inline bool needSetGroup()
   { return !groupName.isEmpty(); }
@@ -148,11 +162,17 @@ public:
 
   inline QString wordToTranslate()
   { return word; }
+
+private:
+  void handleUriSchemes();
 };
 
 GDCommandLine::GDCommandLine( int argc, char **argv ):
-crashReport( false ),
-logFile( false )
+showHelp( false ),
+toggleScanPopup( false ),
+logFile( false ),
+wordsZoomLevel( invalidWordsZoomLevel() ),
+zoomFactor( invalidZoomFactor() )
 {
   if( argc > 1 )
   {
@@ -172,19 +192,33 @@ logFile( false )
     // Parse command line
     for( int i = 0; i < arguments.size(); i++ )
     {
-      if( arguments[ i ].compare( "--show-error-file" ) == 0 )
+      if( arguments[ i ].compare( "-h" ) == 0 || arguments[ i ].compare( "--help" ) == 0 )
       {
-        if( i < arguments.size() - 1 )
-        {
-          errFileName = arguments[ ++i ];
-          crashReport = true;
-        }
+        showHelp = true;
+        continue;
+      }
+      else
+      if( arguments[ i ].compare( "--toggle-scan-popup" ) == 0 )
+      {
+        toggleScanPopup = true;
         continue;
       }
       else
       if( arguments[ i ].compare( "--log-to-file" ) == 0 )
       {
         logFile = true;
+        continue;
+      }
+      else
+      if( arguments[ i ].startsWith( "--words-zoom-level=" ) )
+      {
+        wordsZoomLevel = arguments[ i ].mid( arguments[ i ].indexOf( '=' ) + 1 ).toInt();
+        continue;
+      }
+      else
+      if( arguments[ i ].startsWith( "--zoom-factor=" ) )
+      {
+        zoomFactor = arguments[ i ].mid( arguments[ i ].indexOf( '=' ) + 1 ).toDouble();
         continue;
       }
       else
@@ -202,6 +236,43 @@ logFile( false )
       else
         word = arguments[ i ];
     }
+
+    handleUriSchemes();
+  }
+}
+
+void GDCommandLine::handleUriSchemes()
+{
+  if( word.isEmpty() )
+    return;
+
+  static QLatin1String const uriSchemes[] = { QLatin1String( "goldendict://" ),
+                                              QLatin1String( "dict://" ) };
+  static size_t const uriSchemeCount = sizeof( uriSchemes ) / sizeof( uriSchemes[ 0 ] );
+  for( size_t i = 0; i < uriSchemeCount; ++i )
+  {
+    QLatin1String const scheme = uriSchemes[ i ];
+    if( !word.startsWith( scheme ) )
+      continue;
+
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 0, 0 )
+    int schemeSize = scheme.size();
+#else
+    int schemeSize = strlen( scheme.latin1() );
+#endif
+    if( word.size() > schemeSize && word.at( schemeSize ) == QLatin1Char( '/' ) )
+      ++schemeSize; // support dict:///word as well
+
+    word.remove( 0, schemeSize );
+
+    // An URI can end with a trailing slash, which has to be removed here. This should be more common
+    // than a deliberate lookup of the slash character or a string that ends with a slash.
+    // If word equals '/' (size 1), then word_ ends with 4 slashes, in which case translate the slash.
+    if( word.size() > 1 && word.at( word.size() - 1 ) == QLatin1Char( '/' ) )
+      word.chop( 1 );
+
+    word = QUrl::fromPercentEncoding( word.toUtf8() );
+    break;
   }
 }
 
@@ -256,15 +327,27 @@ int main( int argc, char ** argv )
   setlocale( LC_ALL, "" ); // use correct char set mapping
 #endif
 
-  GDCommandLine gdcl( argc, argv );
-
-  if ( gdcl.needCrashReport() )
+  // --show-error-file is an undocumented, hidden option passed on exit by a crashing GoldenDict instance in its
+  // terminate handler. Therefore, we can assume that, if present, --show-error-file is the first command-line
+  // argument, that the second argument is the error file name and that there are no more arguments.
+  if( argc == 3 && strcmp( argv[ 1 ], "--show-error-file" ) == 0 )
   {
     // The program has crashed -- show a message about it
 
+#ifdef Q_OS_WIN32
+    int numArgs;
+    LPWSTR *pstr = CommandLineToArgvW( GetCommandLineW(), &numArgs );
+    Q_ASSERT( pstr );
+    Q_ASSERT( numArgs == 3 );
+    QString const errorFileName = QString::fromWCharArray( pstr[ 2 ] );
+#else
+    QString const errorFileName = QString::fromLocal8Bit( argv[ 2 ] );
+#endif
+
+    argc = 1; // the two arguments are parsed just above
     QApplication app( argc, argv );
 
-    QFile errFile( gdcl.errorFileName() );
+    QFile errFile( errorFileName );
 
     QString errorText;
 
@@ -309,9 +392,30 @@ int main( int argc, char ** argv )
   QHotkeyApplication app( "GoldenDict", argc, argv );
   LogFilePtrGuard logFilePtrGuard;
 
-  if ( app.isRunning() )
+  GDCommandLine gdcl( argc, argv );
+
+  bool const showHelpAndExit = gdcl.needShowHelp();
+  // Ignore other command-line arguments if help is requested.
+  if( !showHelpAndExit && app.isRunning() )
   {
     bool wasMessage = false;
+
+    if( gdcl.needToggleScanPopup() )
+    {
+      app.sendMessage( "toggleScanPopup" );
+      wasMessage = true;
+    }
+
+    if( gdcl.needSetWordsZoomLevel() )
+    {
+      app.sendMessage( "setWordsZoomLevel: " + QString::number( gdcl.getWordsZoomLevel() ) );
+      wasMessage = true;
+    }
+    if( gdcl.needSetZoomFactor() )
+    {
+      app.sendMessage( "setZoomFactor: " + QString::number( gdcl.getZoomFactor() ) );
+      wasMessage = true;
+    }
 
     if( gdcl.needSetGroup() )
     {
@@ -369,6 +473,50 @@ int main( int argc, char ** argv )
   translator.load( Config::getLocDir() + "/" + localeName );
 
   app.installTranslator( &translator );
+
+  // Show help after loading a system locale translator to translate the help message.
+  // Show help before loading Config to avoid conflicts with a possible another running
+  // GoldenDict instance. An unfortunate consequence of not loading Config is that the
+  // interface language configured in GoldenDict Preferences does not affect the help message.
+  if( showHelpAndExit )
+  {
+    QString const helpMessage = QCoreApplication::translate( "CommandLineHelp",
+        "Usage:\n"
+        "  goldendict [OPTION]... [WORD|URI]\n\n"
+        "GoldenDict dictionary lookup program\n\n"
+        "  WORD\t\t\t\tA word or quoted phrase to translate\n"
+        "  URI\t\t\t\t\"[golden]dict://[/]word or phrase to translate[/]\"\n\n"
+        "Options:\n"
+        "  -h, --help\t\t\tShow command-line help and exit\n"
+        "  --log-to-file\t\t\tTurn on debug mode\n"
+        "  --toggle-scan-popup\t\tToggle scanning mode on/off\n"
+        "  --group-name=GROUP\t\tSet current group of dictionaries in the main window to GROUP\n"
+        "  --popup-group-name=GROUP\tSet current group of dictionaries in the popup window to GROUP\n"
+        "  --zoom-factor=FACTOR\t\tSet the zoom factor for Article View to FACTOR,"
+        " where FACTOR is a real number between 0.1 and 5.0, the default FACTOR is 1.0\n"
+        "  --words-zoom-level=LEVEL\tSet Search Pane/Box font size to"
+        " the default font size plus LEVEL, where LEVEL is an integer (possibly negative)\n"
+        "\nIf another GoldenDict instance is running, the second instance exits immediately, the options"
+        " --toggle-scan-popup, --group-name, --popup-group-name, --zoom-factor and --words-zoom-level affect"
+        " the running instance, WORD or URI is translated in the running instance's popup window.\n"
+        "Otherwise, all options affect the initial state of the new instance,"
+        " WORD or URI is translated in the new instance's main window.\n\n"
+        "Assigning a global keyboard shortcut to the \"goldendict --toggle-scan-popup\""
+        " command in system preferences emulates a scanning-mode-toggling global hotkey."
+                                                            );
+
+#ifdef Q_OS_WIN32
+    // GoldenDict has no console under Windows. Show help in a message box
+    // on this platform, as QCommandLineParser documentation recommends.
+    QMessageBox::information( 0, QCoreApplication::translate( "CommandLineHelp", "GoldenDict command-line help" ),
+                              helpMessage );
+#else
+    QTextStream out( stdout, QIODevice::WriteOnly );
+    out << helpMessage << '\n';
+#endif
+
+    return 0;
+  }
 
   Config::Class cfg;
   for( ; ; )
@@ -453,6 +601,14 @@ int main( int argc, char ** argv )
 
   QObject::connect( &app, SIGNAL(messageReceived(const QString&)),
     &m, SLOT(messageFromAnotherInstanceReceived(const QString&)));
+
+  if( gdcl.needToggleScanPopup() )
+    m.toggleScanPopup();
+
+  if( gdcl.needSetWordsZoomLevel() )
+    m.setWordsZoomLevel( gdcl.getWordsZoomLevel() );
+  if( gdcl.needSetZoomFactor() )
+    m.setZoomFactorImmediately( gdcl.getZoomFactor() );
 
   if( gdcl.needSetGroup() )
     m.setGroupByName( gdcl.getGroupName(), true );

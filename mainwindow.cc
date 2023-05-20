@@ -3299,7 +3299,7 @@ void MainWindow::toggleMainWindow( bool onlyShow )
     if( ftsDlg )
       ftsDlg->show();
 
-    focusTranslateLine();
+    focusArticleView();
 
 #ifdef X11_MAIN_WINDOW_FOCUS_WORKAROUNDS
     if( !byIconClick )

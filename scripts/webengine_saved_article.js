@@ -8,4 +8,5 @@ const qt = {
     }
 };
 const gdCurrentArticleBeforePageReloading = null;
+const gdAutoScrollToTargetArticle = null;
 const gdSelectWordBySingleClick = null;

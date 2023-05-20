@@ -160,12 +160,12 @@ function gdArticleLoaded(articleId) {
         gdCurrentArticleLoaded();
 
     if (gdArticleView)
-        gdArticleView.onJsArticleLoaded(articleId, gdJustLoadedAudioLink, isCurrent);
+        gdArticleView.onJsArticleLoaded(articleId, gdJustLoadedAudioLinks, isCurrent);
     else {
         gdPendingArticles.push(articleId);
-        gdPendingAudioLinks.push(gdJustLoadedAudioLink);
+        gdPendingAudioLinks.push(gdJustLoadedAudioLinks);
     }
-    gdJustLoadedAudioLink = null;
+    gdJustLoadedAudioLinks = [];
 }
 
 function gdMakeArticleActive(newId) {

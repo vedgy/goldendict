@@ -9,8 +9,8 @@ function gdArticleLoaded(articleId) {
         gdCurrentArticle = articleId; // This is the first article. It becomes current when loaded.
 
     const isCurrent = articleId === gdCurrentArticle;
-    gdArticleView.onJsArticleLoaded(articleId, gdJustLoadedAudioLink, isCurrent);
-    gdJustLoadedAudioLink = null;
+    gdArticleView.onJsArticleLoaded(articleId, gdJustLoadedAudioLinks, isCurrent);
+    gdJustLoadedAudioLinks = [];
 }
 
 function gdMakeArticleActive(newId) {

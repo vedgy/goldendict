@@ -5,6 +5,7 @@
 #define __MAINWINDOW_HH_INCLUDED__
 
 #include <QMainWindow>
+#include <QScopedPointer>
 #include <QThread>
 #include <QToolButton>
 #include <QSystemTrayIcon>
@@ -14,6 +15,8 @@
 #include "config.hh"
 #include "dictionary.hh"
 #include "article_netmgr.hh"
+#include "audioplayerinterface.hh"
+#include "audioplayerui.hh"
 #include "audioplayerfactory.hh"
 #include "instances.hh"
 #include "article_maker.hh"
@@ -178,6 +181,10 @@ private:
   std::unique_ptr< QWebEngineProfile > webEngineProfile;
 #endif
 
+  // audioPlayerUi and pronounceActionTexts must be destroyed after audioPlayerFactory because
+  // AudioPlayerInterface::stateChanged() may be emitted from its destructor.
+  QScopedPointer< AudioPlayerUi< QAction > > audioPlayerUi;
+  PronounceActionTexts pronounceActionTexts;
   AudioPlayerFactory audioPlayerFactory;
 
   WordList * wordList;
@@ -304,6 +311,8 @@ private:
   void setTranslateBoxTextAndClearSuffix( QString const & text, WildcardPolicy wildcardPolicy,
                                           TranslateBoxPopup popupAction );
 
+  void connectToAudioPlayer();
+
   QString tabFavoritesFolder( int tabNom );
 
 private slots:
@@ -390,10 +399,9 @@ private slots:
 
   void dictionaryBarToggled( bool checked );
 
-  /// Pronounces the currently displayed word by playing its first audio
-  /// reference, if it has any.
-  /// If view is 0, the operation is done for the currently open tab.
-  void pronounce( ArticleView * view = 0 );
+  void onPronounceTriggered( bool checked );
+
+  void onAudioPlayerStateChanged( AudioPlayerInterface::State state );
 
   void zoomin();
   void zoomout();

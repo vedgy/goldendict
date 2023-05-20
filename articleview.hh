@@ -23,6 +23,7 @@
 #include <functional>
 #include <memory>
 
+class QJsonArray;
 class QWebEngineFindTextResult;
 class QWebEngineProfile;
 class QWebEngineScriptCollection;
@@ -49,8 +50,8 @@ class ArticleView: public QFrame
   ArticleViewJsProxy * const jsProxy;
 
   QStringList articleList; ///< All articles currently present in the view as a list of dictionary ids.
-  QHash< QString, QString > audioLinks;
-  QString firstAudioLink;
+  QHash< QString, QStringList > allAudioLinks; ///< Maps dictionary id to the list of audio links in the dictionary's
+                                               ///< article on the current page. Contains no empty-list values.
   QString currentArticle; ///< Current article in the view, in the form of "gdfrom-xxx"
                           ///< (scrollTo) id. If empty, there is no current article.
 #ifndef USE_QTWEBKIT
@@ -191,7 +192,10 @@ public:
   /// contexts is an optional map of context values to be passed for dictionaries.
   /// The only values to pass here are ones obtained from showDefinitionInNewTab()
   /// signal or none at all.
-  void openLink( QUrl const & url, QUrl const & referrer,
+  /// Returns false if the url scheme is unrecognized or the referenced resource
+  /// doesn't exist or if the resource failed to download. Returns true otherwise:
+  /// on success, if some other error occurs or if the resource is being downloaded asynchronously.
+  bool openLink( QUrl const & url, QUrl const & referrer,
                  QString const & scrollTo = QString(),
                  Contexts const & contexts = Contexts() );
 
@@ -234,8 +238,13 @@ public:
   /// Returns true if there's an audio reference on the page, false otherwise.
   bool hasSound() const;
 
-  /// Plays the first audio reference on the page, if any.
-  void playSound();
+  /// Plays the first valid audio reference on the page, if any.
+  /// Returns false if there is no valid audio reference on the page,
+  /// or if all audio resources failed to download; true otherwise.
+  bool playSound();
+
+  /// Stops current playback if any.
+  void stopPlayback();
 
   void setZoomFactor( qreal factor )
   { ui.definition->setZoomFactor( factor ); }
@@ -367,7 +376,8 @@ private slots:
 
   void jumpToTargetArticle();
 
-  void resourceDownloadFinished();
+  /// Returns false if all requests are finished and none has any data; true otherwise.
+  bool resourceDownloadFinished();
 
   /// We handle pasting by attempting to define the word in clipboard.
   void pasteTriggered();
@@ -420,7 +430,7 @@ private:
   ///        or -1 if no article is active yet.
   /// @param hasPageInitFinished true if the page initialization has already finished,
   ///        in which case onJsPageInitFinished() won't be invoked by this page.
-  void onJsPageInitStarted( QStringList const & loadedArticles, QStringList const & loadedAudioLinks,
+  void onJsPageInitStarted( QStringList const & loadedArticles, QJsonArray const & loadedAudioLinks,
                             int activeArticleIndex, bool hasPageInitFinished, QDateTime const & pageTimestamp_ );
 
   void onJsPageInitFinished();
@@ -435,7 +445,7 @@ private:
   void onJsDoubleClicked( QString const & imageUrl );
 #endif
 
-  void onJsArticleLoaded( QString const & id, QString const & audioLink, bool isActive );
+  void onJsArticleLoaded( QString const & id, QStringList const & audioLinks, bool isActive );
 
   void onJsLocationHashChanged();
 
@@ -444,7 +454,7 @@ private:
   /// Handles the article-loaded JavaScript message assuming it is fresh.
   /// The callers of this function must check timestamps in the Qt WebEngine version.
   /// This function's single purpose is code reuse. It is not exposed to JavaScript.
-  void onJsArticleLoadedNoTimestamps( QString const & id, QString const & audioLink, bool isActive );
+  void onJsArticleLoadedNoTimestamps( QString const & id, QStringList const & audioLinks, bool isActive );
 
   enum TargetFrame { MainFrame, CurrentFrame };
   void runJavaScript( TargetFrame targetFrame, QString const & scriptSource );
@@ -509,6 +519,12 @@ private:
   void openLinkWithFragment( QUrl const & url, QString const & scrollTo );
 
   void showDefinition( Config::InputPhrase const & phrase, QUrl const & url );
+
+  /// Plays the first valid audio reference in the specified dictionary's article on the page, if any.
+  /// @param[in,out] brokenAudioLinks contains audio links that have been checked and found to be broken.
+  /// @return false if the article contains no valid audio references
+  ///         or if all its audio resources failed to download; true otherwise.
+  bool playSound( QString const & dictionaryId, QSet< QString > & brokenAudioLinks );
 
   /// Attempts removing last temporary file created.
   void cleanupTemp();

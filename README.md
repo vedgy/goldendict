@@ -4,7 +4,7 @@
 
 ## Requirements
 
-This code has been run and tested on Windows XP/Vista/7, Ubuntu Linux, Mac OS X.
+This code has been run and tested on Windows XP/Vista/7, Ubuntu Linux, macOS Ventura (M2 CPU).
 
 ### External Deps
 
@@ -12,7 +12,7 @@ This code has been run and tested on Windows XP/Vista/7, Ubuntu Linux, Mac OS X.
 * Qt framework. Minimum required version is 4.6. But Qt 4.7 or 4.8 is recommended.
 * Qt Creator IDE is recommended for development
 * Various libraries on Linux (png, zlib, etc)
-* On Mac and Windows all the libraries are already included in the repository
+* On Windows all the libraries are already included in the repository
 
 ### Installing External Deps on Ubuntu Linux
 
@@ -30,7 +30,11 @@ This code has been run and tested on Windows XP/Vista/7, Ubuntu Linux, Mac OS X.
          libqt5webkit5-dev libqt5svg5-dev libqt5x11extras5-dev qttools5-dev \
          qttools5-dev-tools qtmultimedia5-dev libqt5multimedia5-plugins
 
-## How to build
+### Installing External Deps on macOS (tested on Ventura)
+
+    brew install tiff libao vorbis ffmpeg hunspell xz lzo libogg opencc zstd qt@5
+
+## How to build on Linux and Windows
 
 First, clone this repository, e.g.:
 
@@ -46,6 +50,29 @@ finding it at a path like `/usr/lib/x86_64-linux-gnu/qt5/bin/qmake`.
 Alternatively, you might want to load `goldendict.pro` file from within Qt Creator, especially on Windows.
 
 Note: To compile with `libhunspell` older than 1.5 pass `"CONFIG+=old_hunspell"` to `qmake`.
+## How to build on macOS Ventura 13.1 (succeeded on a Macbook Air M2)
+The old `*.dylib` files included in the `maclibs` directory are outdated (for x86), so they've been removed.
+Any dependent libraries are either using the version come with the OS, or installed by homebrew.
+
+The packages install by Homebrew are (may not be complete):
+```
+brew install tiff libao vorbis ffmpeg hunspell xz lzo libogg opencc zstd qt@5
+```
+
+NOTE: The current version of `qt` is Qt6, which I've been unable to compile successfully. So you either not to
+install the `qt` package, but install `qt@5` or do the following:
+```
+brew unlink qt && brew link qt@5
+```
+
+After all the requirements have been met, compile the App by:
+```
+qmake "CONFIG+=use_qtwebengine" "CONFIG+=no_epwing_support"
+make -j8
+```
+If you are **lucky**, a `GoldenDict.app` could be found in the code's root directory. Move it to `/Applications`
+(or by `make install` maybe, haven't tried it).
+
 
 ### Building with Chinese conversion support
 

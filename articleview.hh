@@ -275,6 +275,10 @@ public:
 
   void saveResource( QUrl const & url, ResourceToSaveHandler & handler );
 
+  /// Return group id of the view
+  unsigned getViewGroup()
+  { return getGroup( ui.definition->url() ); }
+
 signals:
 
   void iconChanged( ArticleView *, QIcon const & icon );

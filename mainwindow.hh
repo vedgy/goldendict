@@ -88,6 +88,8 @@ public:
   QString getTranslateLineText() const
   { return translateLine->text(); }
 
+  void toggleScanPopup();
+
   /// Set group for main/popup window
   void setGroupByName( QString const & name, bool main_window );
 
@@ -297,6 +299,8 @@ private:
                                          TranslateBoxPopup popupAction );
   void setTranslateBoxTextAndClearSuffix( QString const & text, WildcardPolicy wildcardPolicy,
                                           TranslateBoxPopup popupAction );
+
+  QString tabFavoritesFolder( int tabNom );
 
 private slots:
 

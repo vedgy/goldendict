@@ -186,7 +186,11 @@ using std::string;
   void AllowFrameReply::applyError( QNetworkReply::NetworkError code )
   {
     setError( code, baseReply->errorString() );
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 15, 0 )
+    emit errorOccurred( code );
+#else
     emit error( code );
+#endif
   }
 
   void AllowFrameReply::readDataFromBase()
@@ -267,9 +271,9 @@ QNetworkReply * ArticleNetworkAccessManager::createRequest( Operation op,
 
   QNetworkRequest localReq( req );
 
-  if( localReq.url().scheme() == "gdlookup" && localReq.url().host() == "upload.wikimedia.org" )
+  if( ( localReq.url().scheme() == "gdlookup" || localReq.url().scheme() == "http" ) && localReq.url().host() == "upload.wikimedia.org" )
   {
-    // Handle some requests from offline wikipedia/wiktionary without scheme
+    // Handle some requests from offline wikipedia/wiktionary without scheme or with "http" scheme
 
     QUrl newUrl( req.url() );
     newUrl.setScheme( "https" );
@@ -400,7 +404,9 @@ QNetworkReply * ArticleNetworkAccessManager::createRequest( Operation op,
   // spoof User-Agent
   if ( hideGoldenDictHeader && localReq.url().scheme().startsWith("http", Qt::CaseInsensitive))
   {
-    localReq.setRawHeader("User-Agent", localReq.rawHeader("User-Agent").replace(qApp->applicationName(), ""));
+    QByteArray const userAgentHeader = "User-Agent";
+    localReq.setRawHeader( userAgentHeader,
+                           localReq.rawHeader( userAgentHeader ).replace( qApp->applicationName().toUtf8(), "" ) );
     reply = QNetworkAccessManager::createRequest( op, localReq, outgoingData );
   }
 
@@ -463,8 +469,12 @@ sptr< Dictionary::DataRequest > ArticleNetworkAccessManager::getResource(
 
     // See if we have some dictionaries muted
 
-    QSet< QString > mutedDicts =
-        QSet< QString >::fromList( Qt4x5::Url::queryItemValue( url, "muted" ).split( ',' ) );
+    QStringList const mutedDictList = Qt4x5::Url::queryItemValue( url, "muted" ).split( ',' );
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 14, 0 )
+    QSet< QString > const mutedDicts( mutedDictList.cbegin(), mutedDictList.cend() );
+#else
+    QSet< QString > const mutedDicts = QSet< QString >::fromList( mutedDictList );
+#endif
 
     // Unpack contexts
 
@@ -712,7 +722,13 @@ void ArticleResourceReply::readyReadSlot()
 void ArticleResourceReply::finishedSlot()
 {
   if ( req->dataSize() < 0 )
-    error( ContentNotFoundError );
+  {
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 15, 0 )
+    emit errorOccurred( ContentNotFoundError );
+#else
+    emit error( ContentNotFoundError );
+#endif
+  }
 
 #if QT_VERSION >= QT_VERSION_CHECK( 4, 8, 0 )
   setFinished( true );

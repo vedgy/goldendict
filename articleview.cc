@@ -203,7 +203,7 @@ public:
 
     for( size_t left = baseText.size(); left; )
     {
-      if( *nextChar >= 0x10000U )
+      if( *nextChar >= 0x10000 )
       {
         // Will be translated into surrogate pair
         normText.push_back( *nextChar );
@@ -847,7 +847,7 @@ static void expandFrames( QWebView & view )
   {
     // There's some sort of glitch -- sometimes you need to move a mouse
 
-    QMouseEvent ev( QEvent::MouseMove, QPoint(), Qt::MouseButton(), 0, 0 );
+    QMouseEvent ev( QEvent::MouseMove, QPoint(), Qt::MouseButton(), Qt::MouseButtons(), Qt::KeyboardModifiers() );
 
     qApp->sendEvent( &view, &ev );
   }
@@ -1376,15 +1376,15 @@ bool ArticleView::eventFilter( QObject * obj, QEvent * ev )
 
         QWidget *child = widget->childAt( widget->mapFromGlobal( pt ) );
         if( child )
-        {
-          QWheelEvent whev( child->mapFromGlobal( pt ), pt, delta, Qt::NoButton, Qt::NoModifier );
-          qApp->sendEvent( child, &whev );
-        }
-        else
-        {
-          QWheelEvent whev( widget->mapFromGlobal( pt ), pt, delta, Qt::NoButton, Qt::NoModifier );
-          qApp->sendEvent( widget, &whev );
-        }
+          widget = child;
+
+#if QT_VERSION >= QT_VERSION_CHECK( 5, 12, 0 )
+        QWheelEvent whev( widget->mapFromGlobal( pt ), pt, QPoint(), QPoint( 0, delta ),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false );
+#else
+        QWheelEvent whev( widget->mapFromGlobal( pt ), pt, delta, Qt::NoButton, Qt::NoModifier );
+#endif
+        qApp->sendEvent( widget, &whev );
       }
     }
 
@@ -2328,11 +2328,13 @@ Config::InputPhrase ArticleView::getPhrase() const
 
 void ArticleView::print( QPrinter * printer ) const
 {
+#ifdef USE_QTWEBKIT
+  ui.definition->print( printer );
+#else
   // TODO (Qt WebEngine): port this function and its uses to QWebEnginePage::print(). From the documentation:
   // "It is the users responsibility to ensure the printer remains valid until resultCallback has been called." =>
   // consider capturing sptr< QPrinter > MainWindow::printer by value and calling sptr::reset() in the resultCallback.
-#ifdef USE_QTWEBKIT
-  ui.definition->print( printer );
+  Q_UNUSED( printer )
 #endif
 }
 

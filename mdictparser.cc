@@ -521,12 +521,11 @@ bool MdictParser::readRecordBlockInfos()
     r.compressedSize = readNumber( in );
     r.decompressedSize = readNumber( in );
     r.startPos = acc1;
-    r.endPos = acc1 + r.compressedSize;
     r.shadowStartPos = acc2;
     r.shadowEndPos = acc2 + r.decompressedSize;
     recordBlockInfos_.push_back( r );
 
-    acc1 = r.endPos;
+    acc1 += r.compressedSize;
     acc2 = r.shadowEndPos;
   }
 
@@ -619,7 +618,7 @@ bool MdictParser::readRecordBlock( MdictParser::HeadWordIndex & headWordIndex,
 
   for ( HeadWordIndex::const_iterator i = headWordIndex.begin(); i != headWordIndex.end(); ++i )
   {
-    if ( recordBlockInfos_[idx].endPos <= i->first )
+    if ( recordBlockInfos_[idx].shadowEndPos <= i->first )
       idx = RecordIndex::bsearch( recordBlockInfos_, i->first );
 
     if ( idx == ( size_t )( -1 ) )
